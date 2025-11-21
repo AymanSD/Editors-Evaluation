@@ -1,0 +1,16 @@
+CREATE Table "Case Assignment" (
+	"AssignmentID" SERIAL PRIMARY KEY,
+	"UniqueKey" TEXT NOT NULL,
+	"Case Number" TEXT NOT NULL, 
+	"REN" TEXT NOT NULL,
+	"CompletionDate" DATE NOT NULL, 
+	"EditorName" TEXT NOT NULL, 
+	"EditorRecommendation" TEXT NOT NULL,
+	"SupervisorName" TEXT NOT NULL,
+	"GroupID" TEXT NOT NULL, 
+	"GeoAction" TEXT NOT NULL, 
+	"Region" TEXT NOT NULL,
+	"AssignedSupervisor" TEXT NOT NULL,
+	"AssignmentDate" DATE NOT NULL,
+	"IsEvaluated" BOOLEAN NOT NULL,
+)

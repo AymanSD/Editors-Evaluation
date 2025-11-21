@@ -1,13 +1,12 @@
 import sys
 import os
 import psycopg2
-import random
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QPixmap
+from PyQt5.QtGui import QIcon, QFont, QColor, QPalette
 from PyQt5.QtCore import Qt
 from sqlalchemy import create_engine, text
 import pandas as pd
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 # ----------------------------
 # Database connection settings
@@ -27,21 +26,19 @@ parent_directory = os.curdir
 print(parent_directory)
 
 APP_ICON_PATH = r".\Assessment.png"
-logo = r".\Logo_icon.ico"
 
 last_week = (datetime.today() - timedelta(days=7)).date()
 yesterday = (datetime.today() - timedelta(days=1)).date()
 
 # supervisorName = "Raseel alharthi"
-# login_id= os.getlogin()
-sup_ids = ["malnmar.c", "fhaddadi.c", "obakri.c", "ralotaibi.c", "falmarshed.c", "RAlharthi.c"]
-login_id = sup_ids[3]
+login_id= "RAlharthi.c"#os.getlogin()
+
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
 def get_connection():
     return psycopg2.connect(**DB_SETTINGS)
-    # return create_engine(f"postgres ql://{DB_SETTINGS['user']}:{DB_SETTINGS["password"]}@{DB_SETTINGS["server"]}:{DB_SETTINGS["port"]}/{DB_SETTINGS["dbname"]}")
+    # return create_engine(f"postgresql://{DB_SETTINGS['user']}:{DB_SETTINGS["password"]}@{DB_SETTINGS["server"]}:{DB_SETTINGS["port"]}/{DB_SETTINGS["dbname"]}")
 
 def retrive_supervisor(supervisor_id):
     conn = get_connection()
@@ -64,7 +61,7 @@ class MainWindow(QtWidgets.QWidget):
         super().__init__()
         self.setWindowTitle("Evaluation System")
         self.setWindowIcon(QIcon(APP_ICON_PATH))
-        self.resize(1000, 720)
+        self.resize(900, 600)
 
         # 🌈 Apply light theme
         palette = QPalette()
@@ -83,10 +80,8 @@ class MainWindow(QtWidgets.QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # icon = QPixmap(logo).scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio)
         # ----- Header Title -----
-        header = QtWidgets.QLabel("GRS - Team Evaluation System")
-        # self.header.setText(f'<img src="./Logo_icon.ico" width="24" height="24"> GRS - Team Evaluation System')
+        header = QtWidgets.QLabel("🗂️ Team Evaluation System")
         header.setFont(QFont("Cairo", 16, QFont.Bold))
         header.setAlignment(Qt.AlignCenter)
         header.setStyleSheet("""
@@ -97,7 +92,6 @@ class MainWindow(QtWidgets.QWidget):
                 border-bottom: 3px solid #005a9e;
             }
         """)
-        # main_layout.addWidget(icon)
         main_layout.addWidget(header)
 
         # ----- Main Content Area (Sidebar + Table) -----
@@ -144,12 +138,12 @@ class MainWindow(QtWidgets.QWidget):
         
         # Date range
         sidebar_layout.addWidget(QtWidgets.QLabel("From:"))
-        self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-24))
+        self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-16))
         self.start_date.setCalendarPopup(True)
         sidebar_layout.addWidget(self.start_date)
 
         sidebar_layout.addWidget(QtWidgets.QLabel("To:"))
-        self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-18))
+        self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-15))
         self.end_date.setCalendarPopup(True)
         sidebar_layout.addWidget(self.end_date)
 
@@ -157,18 +151,18 @@ class MainWindow(QtWidgets.QWidget):
         sidebar_layout.addWidget(QtWidgets.QLabel("Editor:"))
         self.editor_drop = QtWidgets.QComboBox()
         self.editor_drop.addItem("")
-        query = f"""SELECT "EditorName", "Region", "GeoAction" FROM "CaseAssignment" 
-                Where "CompletionDate" BETWEEN '{self.start_date.date().toPyDate()}' AND '{self.end_date.date().toPyDate()}' 
-                AND "AssignedSupervisor" = '{supervisorName}' """
+        query = f"""SELECT "Geo Supervisor", "Region", "GeoAction" FROM "GeoCompletion" 
+                Where "GEO S Completion" BETWEEN '{self.start_date.date().toPyDate()}' AND '{self.end_date.date().toPyDate()}' 
+                AND "SupervisorName"= '{supervisorName}' """
         conn = get_connection()
-        self.editor_drop.addItems(pd.read_sql(query, conn)['EditorName'].unique().tolist())
+        self.editor_drop.addItems(pd.read_sql(query, conn)['Geo Supervisor'].unique().tolist())
         sidebar_layout.addWidget(self.editor_drop)
 
         # GeoAction
         sidebar_layout.addWidget(QtWidgets.QLabel("GeoAction:"))
         self.action_combo = QtWidgets.QComboBox()
         self.action_combo.addItem("")
-        self.action_combo.addItems([i for i in pd.read_sql(query, conn)['GeoAction'].unique().tolist()])
+        self.action_combo.addItems([i for i in pd.read_sql(query, conn)['GeoAction'].unique().tolist() if i not in ['', 'رفض']])
         sidebar_layout.addWidget(self.action_combo)
 
         # Region
@@ -247,141 +241,110 @@ class MainWindow(QtWidgets.QWidget):
 
         self.cases_df = pd.DataFrame()
 
-    # --------------------------
-    # On-demand assignment
-    # --------------------------
-    def generate_daily_assignment(self):
-        max_days = 14
-        day_back = 1
-        found_cases = False
-        engine = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
-        conn = get_connection()
-        while day_back <= max_days:
-            target_date = self.end_date.date().toPyDate() - timedelta(days=day_back)
-            # Pull yesterday's cases
-            sql = """
-                SELECT *
-                FROM "GeoCompletion"
-                WHERE "GEO S Completion"::date = %s
-                AND "GeoAction" IS NOT NULL
-                AND "GroupID" IN ('Editor Morning shift  ', 'Editor Night Shift')
-                AND "UniqueKey" NOT IN (
-                    SELECT "UniqueKey" FROM "EvaluationTable"
-                    UNION
-                    SELECT "UniqueKey" FROM "CaseAssignment"
-                )
-            """
-            df = pd.read_sql(sql, conn, params=[target_date])
-
-            if not df.empty:
-                found_cases = True
-                break
-            day_back += 1
-
-        if not found_cases:
-            QtWidgets.QMessageBox.warning(None, "No Cases", 
-                f"No valid cases found in the past {max_days} days.")
-            return None, day_back-1
-
-        # Editors and Supervisors for assignment
-        supervisors = [i for i in df["SupervisorName"].unique() if not pd.isnull(i)]
-        excluded = ["Mahmoud Aboalmaged", "Moataz Ibrahim"] + [i for i in supervisors]
-        editors = [i for i in df["Geo Supervisor"].unique() if not pd.isnull(i) and i not in excluded]
-        random.shuffle(supervisors)
-
-        assignments = []
-
-        for i, editor in enumerate(editors):
-            editor_df = df[df["Geo Supervisor"] == editor]
-
-            # Get one reject case
-            reject_case = editor_df[editor_df["GeoAction"] == 'رفض']
-            other_case = editor_df[editor_df["GeoAction"] != 'رفض']
-
-            if reject_case.empty or other_case.empty:
-                QtWidgets.QMessageBox.warning(None, "Incomplete Cases",
-                    f"Editor {editor} has only 1 valid case. Skipping second case.")
-            
-            # Take 1 from each if available
-            reject_row = reject_case.sample(1) if not reject_case.empty else None
-            other_row = other_case.sample(1) if not other_case.empty else None
-
-            for row in [reject_row, other_row]:
-                if row is not None:
-                    row_dict = row.to_dict(orient='records')[0]
-                    row_dict['AssignedSupervisor'] = supervisors[i % len(supervisors)]
-                    row_dict['AssignmentDate'] = date.today()
-                    assignments.append(row_dict)
-
-        if not assignments:
-            QtWidgets.QMessageBox.warning(None, "No Assignments", 
-                "No cases could be assigned today.")
-            return None, day_back-1
-
-        assign_df = pd.DataFrame(assignments)
-        # Write to CaseAssignment
-        assign_df = assign_df[["UniqueKey","Case Number", "REN", "GEO S Completion", "Geo Supervisor", "Geo Supervisor Recommendation", "SupervisorName", "GroupID", "GeoAction",
-                   "Region", "AssignedSupervisor","AssignmentDate"]]
-        assign_df = assign_df.rename({"GEO S Completion":"CompletionDate", "Geo Supervisor":"EditorName", 
-                                      "Geo Supervisor Recommendation":"EditorRecommendation"}, axis=1)
-        assign_df[["UniqueKey","Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", "SupervisorName", "GroupID", "GeoAction",
-                   "Region", "AssignedSupervisor","AssignmentDate"]].to_sql("CaseAssignment", engine, if_exists="append", index=False
-        )
-
-        return assign_df, day_back
-
-    # --------------------------
-    # Load supervisor cases
-    # --------------------------
-    def load_supervisor_assignment(self, supervisor_name):
+    def load_cases(self):
+        supervisor = self.sup_input.text().strip()
         editor = self.editor_drop.currentText().strip()
         region = self.region_combo.currentText().strip()
         action = self.action_combo.currentText().strip()
-        conn = get_connection()
-        sql = """
-            SELECT *
-            FROM "CaseAssignment"
-            WHERE "AssignedSupervisor" = %s
-            AND "IsEvaluated" = FALSE
-        """
-        if editor:
-            sql += f"""AND "EditorName" = '{editor}' """
-        if action:
-            sql += f"""AND "GeoAction" = '{action}' """
-        if region:
-            sql += f"""AND "Region" = '{region}' """
 
-        sql += 'ORDER BY "EditorName" '
-        df = pd.read_sql(sql, conn, params=[supervisor_name])
-        return df
-
-    # --------------------------
-    # Usage example in PyQt MainWindow
-    # --------------------------
-    def load_cases(self):
-        supervisor = self.sup_input.text().strip()
         if not supervisor:
             QtWidgets.QMessageBox.warning(self, "Error", "Please enter Supervisor Name.")
             return
 
         conn = get_connection()
+        days_back = 1
+        max_days = 14
 
-        # Check if assignments exist
-        check_sql = """
-            SELECT COUNT(*) FROM "CaseAssignment"
-            WHERE "AssignmentDate" = CURRENT_DATE
-        """
-        count = pd.read_sql(check_sql, conn).iloc[0,0]
+        result_df = pd.DataFrame()
 
-        if count == 0:
-            assigned_df, days_back = self.generate_daily_assignment()
-            if assigned_df is None:
-                return
-            QtWidgets.QMessageBox.information(self, "Assignments Generated",
-                f"Assignments generated from {days_back} day(s) back.")
-        
-        # Load supervisor's cases
-        self.cases_df = self.load_supervisor_assignment(supervisor)
+        while days_back <= max_days:
+
+            target_date = self.end_date.date().toPyDate() - timedelta(days=days_back)
+
+            # -------- 1️⃣ Rejected case query ----------
+            reject_query = """
+                WITH rejected AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY "Geo Supervisor"
+                            ORDER BY "GEO S Completion" DESC
+                        ) AS rn
+                    FROM "GeoCompletion"
+                    WHERE "SupervisorName" = %s
+                    AND "GEO S Completion" = %s
+                    AND "GeoAction" = 'رفض'
+                   -- AND "UniqueKey" NOT IN (SELECT "UniqueKey" FROM "EvaluationTable")
+                )
+                SELECT * FROM rejected WHERE rn = 1;
+            """
+
+            # -------- 2️⃣ Non-rejected case query ----------
+            normal_query = """
+                WITH accepted AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY "Geo Supervisor"
+                            ORDER BY "GEO S Completion" DESC
+                        ) AS rn
+                    FROM "GeoCompletion"
+                    WHERE "SupervisorName" = %s
+                    AND "GEO S Completion" = %s
+                    AND "GeoAction" != 'رفض'
+                    --AND "UniqueKey" NOT IN (SELECT "UniqueKey" FROM "EvaluationTable")
+                )
+                SELECT * FROM accepted WHERE rn = 1;
+            """
+
+            reject_df = pd.read_sql(reject_query, conn, params=[supervisor, target_date])
+            normal_df = pd.read_sql(normal_query, conn, params=[supervisor, target_date])
+
+            combined = pd.concat([reject_df, normal_df], ignore_index=True)
+
+            # -------- Optional Filters --------
+            if editor:
+                combined = combined[combined["Geo Supervisor"].str.contains(editor, case=False, na=False)]
+
+            if region:
+                combined = combined[combined["Region"].str.contains(region, case=False, na=False)]
+
+            if action:
+                combined = combined[combined["GeoAction"].str.contains(action, case=False, na=False)]
+
+            # STOP when we have at least one case
+            if not combined.empty:
+                result_df = combined
+                break
+
+            days_back += 1
+
+        conn.close()
+
+        # Nothing at all found
+        if result_df.empty:
+            QtWidgets.QMessageBox.information(
+                self, "Info", "No cases found for the past 14 days."
+            )
+            return
+
+        # -------- Show message: how many days back searched --------
+        QtWidgets.QMessageBox.information(
+            self, "Search Result",
+            f"Cases retrieved from {days_back} day(s) back (Date: {target_date})"
+        )
+
+        # -------- Warn if only 1 case for editor --------
+        if len(result_df) == 1:
+            editor_name = result_df.iloc[0]["Geo Supervisor"]
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Incomplete Assignment",
+                f"Editor '{editor_name}' has only 1 valid case.\n"
+                f"(Expected: 2 cases — Reject + Non-Reject)"
+            )
+
+        # Save final df
+        self.cases_df = result_df.copy()
+
         # Format REN
         if "REN" in self.cases_df.columns:
             self.cases_df["REN"] = self.cases_df["REN"].astype(str).str[:16]
@@ -389,8 +352,8 @@ class MainWindow(QtWidgets.QWidget):
         # === Prepare fields for table ===
         self.preview_df = self.cases_df[
             [c for c in self.cases_df.columns
-            if c in ["Case Number", "REN", "CompletionDate", "EditorName", "SupervisorName", "EditorRecommendation",
-                    "GeoAction", "Region", "IsEvaluated"]]
+            if c in ["Case Number", "Geo Supervisor", "Geo Supervisor Recommendation",
+                    "GEO S Completion", "GeoAction", "Region"]]
         ]
 
         self.table.setRowCount(len(self.preview_df))
@@ -404,19 +367,15 @@ class MainWindow(QtWidgets.QWidget):
                 item = QtWidgets.QTableWidgetItem(val)
                 item.setFlags(item.flags() ^ Qt.ItemIsEditable)
 
-                # Row Coloring based on Evaluation Status
-                if self.preview_df.iloc[r]["IsEvaluated"]:
-                    item.setBackground(QColor("#d3d3d3"))  # gray for evaluated
-                    item.setFlags(Qt.NoItemFlags)
+                # Row coloring based on GeoAction
+                geo_action = str(self.preview_df.iloc[r]["GeoAction"])
+                if geo_action == "رفض":
+                    item.setBackground(QColor("#ffb3b3"))  # Light red
                 else:
-                    # Row coloring based on GeoAction
-                    geo_action = str(self.preview_df.iloc[r]["GeoAction"])
-                    if geo_action == "رفض":
-                        item.setBackground(QColor("#ffb3b3"))  # Light red
-                    else:
-                        item.setBackground(QColor("#c2f0c2"))  # Light green
+                    item.setBackground(QColor("#c2f0c2"))  # Light green
 
                 self.table.setItem(r, c, item)
+
 
     def reset_filters(self):
         """Reset all filters to default state."""
@@ -424,8 +383,8 @@ class MainWindow(QtWidgets.QWidget):
         self.editor_drop.clear()
         self.action_combo.setCurrentIndex(0)
         self.region_combo.setCurrentIndex(0)
-        self.start_date.setDate(QtCore.QDate.currentDate().addDays(-24))
-        self.end_date.setDate(QtCore.QDate.currentDate().addDays(-17))
+        self.start_date.setDate(QtCore.QDate.currentDate().addDays(-36))
+        self.end_date.setDate(QtCore.QDate.currentDate().addDays(-30))
 
     def open_evaluation(self, row, column):
         if self.cases_df.empty:
@@ -442,19 +401,19 @@ class EvaluationWindow(QtWidgets.QDialog):
         super().__init__()
         self.setWindowTitle("Case Evalution")
         self.setWindowIcon(QIcon(APP_ICON_PATH))
-        self.resize(650, 450)
+        self.resize(600, 400)
         # eval_title = QtWidgets.QLabel("📋Case Assessment")
         self.cases_df = cases_df
         self.index = row_index  # ✅ Fix: define index for navigation
         self.supervisor_name = supervisor_name
 
-        self.setFont(QFont("Cairo", 11))
+        self.setFont(QFont("Cairo", 10))
         self.setStyleSheet("""
             QGroupBox { font-weight: bold; color: #444; border: 1px solid #ccc; border-radius: 6px; margin-top: 8px; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; top: -4px; }
             QLabel { color: #333; }
             QPushButton {
-                background-color: #0A3556; color: white;
+                background-color: #BC9975; color: white;
                 padding: 6px 12px; border-radius: 6px;
             }
             QPushButton:hover { background-color: #005a9e; }
@@ -467,15 +426,18 @@ class EvaluationWindow(QtWidgets.QDialog):
 
         # Header + copy button layout
         header_layout = QtWidgets.QHBoxLayout()
-        buttons_layout = QtWidgets.QVBoxLayout()
-        left_layout = QtWidgets.QVBoxLayout()
-        header_layout.addLayout(left_layout)
+
+        self.header = QtWidgets.QLabel(f"Case Evaluation - {self.cases_df.iloc[self.index]['Case Number']}")
+        self.header.setAlignment(Qt.AlignCenter)
+        self.header.setStyleSheet("font-size:14px; font-weight:bold; color:#824131; margin-bottom:6px;")
+        header_layout.addWidget(self.header)
+
         # Copy Case Number button
         self.copy_FR = QtWidgets.QPushButton("Copy FR")
         self.copy_FR.setFixedWidth(80)
         self.copy_FR.setStyleSheet("""
             QPushButton {
-                # background-color: #0A3556;
+                background-color: #824131;
                 color: white;
                 border-radius: 6px;
                 padding: 4px;
@@ -484,32 +446,25 @@ class EvaluationWindow(QtWidgets.QDialog):
             QPushButton:hover { background-color: #a1503e; }
         """)
         self.copy_FR.clicked.connect(self.copy_case_number)
-        buttons_layout.addWidget(self.copy_FR)
-
-        self.header = QtWidgets.QLabel(f"Case Evaluation - {self.cases_df.iloc[self.index]['Case Number']}")
-        self.header.setAlignment(Qt.AlignCenter)
-        self.header.setStyleSheet("font-size:16px; font-weight:bold; color:#0A3556; margin-bottom:6px;")
-        header_layout.addWidget(self.header)
+        header_layout.addWidget(self.copy_FR)
 
         # Copy REN button
         self.copy_btn_ren = QtWidgets.QPushButton("Copy REN")
         self.copy_btn_ren.setFixedWidth(80)
         self.copy_btn_ren.setStyleSheet("""
-            QPushButton {
-                # background-color: #367580;
-                color: white;
-                border-radius: 6px;
-                padding: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #a1503e; }
-        """)
+        #     QPushButton {
+        #         background-color: #367580;
+        #         color: white;
+        #         border-radius: 6px;
+        #         padding: 4px;
+        #         font-weight: bold;
+        #     }
+        #     QPushButton:hover { background-color: #a1503e; }
+        # """)
         self.copy_btn_ren.clicked.connect(self.copy_ren)
-        buttons_layout.addWidget(self.copy_btn_ren)
+        header_layout.addWidget(self.copy_btn_ren)
 
-        header_layout.addLayout(buttons_layout)
         main_layout.addLayout(header_layout)
-        
         # --- Case Info Section ---
         info_group = QtWidgets.QGroupBox("Case Information")
         info_layout = QtWidgets.QGridLayout(info_group)
@@ -527,8 +482,8 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.case_field_map = {
             "Case Number": "Case Number",
             "REN": "REN",
-            "Completion Date": "CompletionDate",
-            "EditorName": "EditorName",
+            "Completion Date": "GEO S Completion",
+            "Editor": "Geo Supervisor",
             "GeoAction": "GeoAction",
             "Supervisor": "SupervisorName",
             "Group ID": "GroupID",
@@ -537,14 +492,14 @@ class EvaluationWindow(QtWidgets.QDialog):
         case_fields = {
             "Case Number": case.get("Case Number", ""),
             "REN": case.get("REN", ""),
-            "Completion Date": case.get("CompletionDate", ""),
-            "Editor Name": case.get("EditorName", ""),
+            "Completion Date": case.get("GEO S Completion", ""),
+            "Editor": case.get("Geo Supervisor", ""),
             "GeoAction": case.get("GeoAction", ""),
             "Supervisor": case.get("SupervisorName", ""),
             "Group ID": case.get("GroupID", ""),
         }
 
-        # ✅ Store info labels for updates  
+        # ✅ Store info labels for updates
         self.info_labels = {}
         for i, (display, col_name) in enumerate(self.case_field_map.items()):
             lbl_title = QtWidgets.QLabel(f"<b>{display}:</b>")
@@ -558,7 +513,7 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.recommendation_text = QtWidgets.QTextEdit()
         self.recommendation_text.setReadOnly(True)
         self.recommendation_text.setMaximumHeight(60)  # ✅ smaller box
-        self.recommendation_text.setText(str(case.get("EditorRecommendation", "")))
+        self.recommendation_text.setText(str(case.get("Geo Supervisor Recommendation", "")))
 
         info_layout.addWidget(rec_label, (len(case_fields) // 2) + 1, 0, 1, 2)
         info_layout.addWidget(self.recommendation_text, (len(case_fields) // 2) + 2, 0, 1, 4)
@@ -575,17 +530,12 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.eval_fields = {}
 
         options = ["Yes", "No"]
-        fields = ["Procedure", "Recommendation", "Topology", "Completeness", "BlockAlignment"]
-        technical_fields = ["Topology", "Completeness", "BlockAlignment"]
-        weights = [0.7, 0.3, 0.35, 0.4,0.25]
-              
+        fields = ["Procedure", "Topology", "Recommendation", "Completeness", "BlockAlignment"]
+
         for i, field in enumerate(fields):
             label = QtWidgets.QLabel(field + ":")
             dropdown = QtWidgets.QComboBox()
-            if case['GeoAction'] == 'رفض' and field in technical_fields:
-                dropdown.addItems([None])
-            else:
-                dropdown.addItems([""]+options)
+            dropdown.addItems([""] + options)
             dropdown.setFixedWidth(120)
             # dropdown.setContentsMargins(8,8,8,100)
 
@@ -595,21 +545,18 @@ class EvaluationWindow(QtWidgets.QDialog):
             eval_layout.addWidget(label, row, col)
             eval_layout.addWidget(dropdown, row, col + 1)
             self.eval_fields[field] = dropdown
-            
-            
-        # print(self.eval_fields)
-        
+        # self.eval_fields["EvaluationDate"] = datetime.now()
 
         main_layout.addWidget(eval_group)
 
         # --- Buttons in One Row ---
         btn_layout = QtWidgets.QHBoxLayout()
         # Button row (optional)
-        btn_layout.setSpacing(20)
+        btn_layout.setSpacing(15)
         self.prev_btn = QtWidgets.QPushButton("← Previous")
         self.prev_btn.setStyleSheet("""
             QPushButton {
-                background-color: #824131;
+                background-color: #BC9975;
                 color: white;
                 padding: 8px;
                 border-radius: 8px;
@@ -664,56 +611,20 @@ class EvaluationWindow(QtWidgets.QDialog):
 
         # Update header
         self.header.setText(f"Case Evaluation - {case['Case Number']}")
-        if case.get("IsEvaluated", False):
-            self.header.setStyleSheet("font-size:14px; font-weight:bold; color:#824131; margin-bottom:6px;")
-        else:
-            self.header.setStyleSheet("font-size:14px; font-weight:bold; color:#0A3556; margin-bottom:6px;")
 
-
-        # Update info labels
         for col_name, label_widget in self.info_labels.items():
             label_widget.setText(str(case.get(col_name, "")))
 
-        # Update recommendation
-        self.recommendation_text.setText(str(case.get("EditorRecommendation", "")))
+        self.recommendation_text.setText(str(case.get("Geo Supervisor Recommendation", "")))
 
-        # --- Update evaluation fields ---
-        options = ["Yes", "No"]
-        technical_fields = ["Topology", "Completeness", "BlockAlignment"]
-        fields = ["Procedure", "Recommendation", "Topology", "Completeness", "BlockAlignment"]
-
-        for field in fields:
-            dropdown = self.eval_fields[field]
-            if isinstance(dropdown, QtWidgets.QComboBox):
-                if case["IsEvaluated"]:
-                    dropdown.setCurrentIndex(0)        # Reset to empty
-                    dropdown.setEnabled(False)         # Disable editing
-                else:
-                    dropdown.setCurrentIndex(0)        # Reset to empty
-                    dropdown.setEnabled(True)          # Enable editing
-                    # Clear previous items
-                    dropdown.clear()
-
-                    # Repopulate based on GeoAction
-                    if case['GeoAction'] == 'رفض' and field in technical_fields:
-                        dropdown.addItem("")  # only allow empty
-                    else:
-                        dropdown.addItems([""] + options)
-            
-            # # Optional: show a message if the case is already evaluated
-            # if case["IsEvaluated"]:
-            #     QtWidgets.QMessageBox.information(self, "Info", 
-            #         f"Case {case['Case Number']} has already been evaluated.")
-            # Reset selection
-            dropdown.setCurrentIndex(0)    
-
+        for field in self.eval_fields:
+            self.eval_fields[field].setCurrentIndex(0)
     def copy_case_number(self):
         """Copy the current case number to clipboard."""
         case_number = self.cases_df.iloc[self.index]['Case Number']
         clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText(str(case_number))
         QtWidgets.QMessageBox.information(self, "Copied", f"Case Number '{case_number}' copied to clipboard!")
-    
     def copy_ren(self):
         """Copy the current REN to clipboard."""
         ren = self.cases_df.iloc[self.index]['REN']
@@ -724,104 +635,31 @@ class EvaluationWindow(QtWidgets.QDialog):
     # --- Submit Evaluation ---
     def submit_evaluation(self):
         case = self.cases_df.iloc[self.index]
-
-        # 1️⃣ Extract dropdown choices
-        procedure     = self.eval_fields["Procedure"].currentText()
-        recommendation = self.eval_fields["Recommendation"].currentText()
-        topology      = self.eval_fields["Topology"].currentText()
-        completeness  = self.eval_fields["Completeness"].currentText()
-        blockalign    = self.eval_fields["BlockAlignment"].currentText()
-
-        # 2️⃣ Compute numeric scores
-        def score(value, weight):
-            return weight if value == "Yes" else 0
-
-        procedure_score       = score(procedure, 0.7)
-        recommendation_score  = score(recommendation, 0.3)
-        
-        # Handling invalid submissions
-        field_dict = {"Procedure": procedure, "Recommendation": recommendation, "Topology": topology, 
-                      "Completeness": completeness, "BlockAlignment": blockalign} 
-        
-        # Technical fields only counted if GeoAction != "رفض"
-        if case["GeoAction"] == "رفض":
-            check = ["Procedure", "Recommendation"]
-            null_fields = [i for i in check if field_dict[i] == ""]
-            if len(null_fields)>0:
-                message = ', '.join([i for i in null_fields])
-                QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
-                    f"Please complete all required fields before submitting. Missing input for {message}.")
-                return
-            topology_score = completeness_score = blockalign_score = None
-        else:
-            null_fields = [i for i in field_dict.keys() if field_dict[i] == ""]
-            if len(null_fields) >0:
-                message = ', '.join([i for i in null_fields])
-                QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
-                    f"Please complete all required fields before submitting. Missing input for {message}.")
-                return
-            topology_score     = score(topology, 0.35)
-            completeness_score = score(completeness, 0.4)
-            blockalign_score   = score(blockalign, 0.25)
-
-        # 3️⃣ Aggregated scores
-        procedural_accuracy = procedure_score + recommendation_score
-
-        if case["GeoAction"] == "رفض":
-            technical_accuracy = None
-        else:
-            technical_accuracy = (
-                topology_score + completeness_score + blockalign_score
-            )
-
-        # 4️⃣ Build VALUES list in correct order
         values = [
-            case["UniqueKey"],
             case["Case Number"],
-            case.get("CompletionDate", None),
-            case.get("EditorRecommendation", None),
-            case.get("EditorName", None),
-            case.get("SupervisorName", None),
-            case.get("GroupID", None),
-            case.get("GeoAction", None),
-            procedure, procedure_score, recommendation, recommendation_score, topology, topology_score, completeness,
-            completeness_score, blockalign, blockalign_score, procedural_accuracy, technical_accuracy, self.supervisor_name, datetime.now().replace(microsecond=0)]
+            case.get("GEO S Completion", ""),
+            case.get("Geo Supervisor", ""),
+            case.get("Geo Supervisor Recommendation", ""),
+            case.get("GeoAction", ""),
+            self.supervisor_name,
+            case.get("GroupID", ""),
+        ]
+        values += [self.eval_fields[field].currentText() for field in self.eval_fields]
+        # values += [datetime.now()]
 
-        # 5️⃣ Insert into database
         conn = get_connection()
-        evaluatedCases = pd.read_sql("""SELECT "UniqueKey" FROM "EvaluationTable" """, conn)
-        
-        if case['UniqueKey'] in evaluatedCases["UniqueKey"].values:
-            QtWidgets.QMessageBox.warning(self, "Duplicated Entry", f"Case {case['Case Number']} has already been evaluated.")
-        
-        else:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO "EvaluationTable"
-                    ("UniqueKey","Case Number","CompletionDate","EditorRecommendation", "EditorName","SupervisorName","GroupID","GeoAction",
-                    "Procedure","ProcedureScore","Recommendation","RecommendationScore", "Topology","TopologyScore","Completeness","CompletenessScore",
-                    "BlockAlignment","BlockAlignmentScore","ProceduralAccuracy", "TechnicalAccuracy","EvaluatedBy","EvaluationDate")
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, values)
-                conn.commit()
-            # Update EvaluationStatus On Assignment Table
-            update_sql = """
-                UPDATE "CaseAssignment"
-                SET "IsEvaluated" = TRUE
-                WHERE "UniqueKey" = %s
-                AND "AssignedSupervisor" = %s
-            """
-            with conn.cursor() as cur:
-                cur.execute(update_sql, (case["UniqueKey"], self.supervisor_name))
-                conn.commit()
+        evaluation = pd.DataFrame
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO "Evaluation"
+                ("CaseNumber","CompletionDate", "EditorName", "EditorRecommendation", "GeoAction", "SupervisorName","GroupID",
+                 "Procedure","Topology","Recommendation", "Completeness","BlockAlignment", "EvaluationDate")
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, values + [datetime.now()])
+            conn.commit()
+        conn.close()
 
-            
-
-
-            conn.close()
-            QtWidgets.QMessageBox.information(self, "Success", "Evaluation submitted!")
-
+        QtWidgets.QMessageBox.information(self, "Success", "Evaluation submitted!")
 
 
 # ----------------------------
