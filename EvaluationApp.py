@@ -251,7 +251,7 @@ class MainWindow(QtWidgets.QWidget):
     # On-demand assignment
     # --------------------------
     def generate_daily_assignment(self):
-        max_days = 14
+        max_days = 7
         day_back = 1
         found_cases = False
         engine = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
@@ -291,28 +291,74 @@ class MainWindow(QtWidgets.QWidget):
 
         assignments = []
 
+        # Create a list of all dates to search, starting with target_date
+        search_dates = [self.end_date.date().toPyDate() - timedelta(days=x) for x in range(1, max_days + 1)]
+        dates_back = []
         for i, editor in enumerate(editors):
-            editor_df = df[df["Geo Supervisor"] == editor]
+            # 1 — Get cases for this editor from the primary (target) date
+            editor_cases = df[df["Geo Supervisor"] == editor]
 
-            # Get one reject case
-            reject_case = editor_df[editor_df["GeoAction"] == 'رفض']
-            other_case = editor_df[editor_df["GeoAction"] != 'رفض']
+            reject_case = editor_cases[editor_cases["GeoAction"] == 'رفض']
+            edit_case = editor_cases[editor_cases["GeoAction"] != 'رفض']
+            print(f"==================================================\n Initial Df Editor: {editor} | Date: {target_date}\n{len(reject_case)}, {len(edit_case)}")
+            # 2 — If missing categories → search older dates
+            if reject_case.empty or edit_case.empty:
 
-            if reject_case.empty or other_case.empty:
-                QtWidgets.QMessageBox.warning(None, "Incomplete Cases",
-                    f"Editor {editor} has only 1 valid case. Skipping second case.")
-            
-            # Take 1 from each if available
-            reject_row = reject_case.sample(1) if not reject_case.empty else None
-            other_row = other_case.sample(1) if not other_case.empty else None
+                for d in search_dates[1:]:  # skip target_date already checked
+                    print(f"==================================================\n Searching for cases on {d}")
+                    if d not in dates_back:
+                        dates_back.append(d)
+                    sql_more = """
+                        SELECT *
+                        FROM "GeoCompletion"
+                        WHERE "GEO S Completion"::date = %s
+                        AND "GeoAction" IS NOT NULL
+                        AND "GroupID" IN ('Editor Morning shift  ', 'Editor Night Shift')
+                        AND "Geo Supervisor" = %s
+                        AND "UniqueKey" NOT IN (
+                                SELECT "UniqueKey" FROM "EvaluationTable"
+                                UNION
+                                SELECT "UniqueKey" FROM "CaseAssignment"
+                        )
+                    """
 
-            for row in [reject_row, other_row]:
-                if row is not None:
-                    row_dict = row.to_dict(orient='records')[0]
-                    row_dict['AssignedSupervisor'] = supervisors[i % len(supervisors)]
-                    row_dict['AssignmentDate'] = date.today()
-                    assignments.append(row_dict)
+                    df_more = pd.read_sql(sql_more, conn, params=[d, editor])
 
+                    if df_more.empty:
+                        continue
+
+                    # append additional rows
+                    if reject_case.empty:
+                        reject_case = df_more[df_more["GeoAction"] == "رفض"]
+                        # reject_case = pd.concat([reject_case, df_more[df_more["GeoAction"] == "رفض"]])
+
+                    if edit_case.empty:
+                        edit_case = df_more[df_more["GeoAction"] != "رفض"]
+                        # edit_case = pd.concat([edit_case, df_more[df_more["GeoAction"] != "رفض"]])
+                    print(editor,":", len(reject_case), "/ ", len(edit_case))
+                    # Stop searching if both categories found
+                    if not reject_case.empty and not edit_case.empty:
+                        break
+
+            # 3 — Final selection  
+            selected_rows = []
+
+            if not reject_case.empty:
+                selected_rows.append(reject_case.sample(1))
+
+            if not edit_case.empty:
+                selected_rows.append(edit_case.sample(1))
+
+            # If editor has neither category even after searching 14 days → skip
+            if not selected_rows:
+                continue
+
+            # 4 — Format & assign supervisor
+            for row in selected_rows:
+                row_dict = row.to_dict(orient="records")[0]
+                row_dict['AssignedSupervisor'] = supervisors[i % len(supervisors)]
+                row_dict['AssignmentDate'] = date.today()
+                assignments.append(row_dict)
         if not assignments:
             QtWidgets.QMessageBox.warning(None, "No Assignments", 
                 "No cases could be assigned today.")
@@ -327,8 +373,8 @@ class MainWindow(QtWidgets.QWidget):
         assign_df[["UniqueKey","Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", "SupervisorName", "GroupID", "GeoAction",
                    "Region", "AssignedSupervisor","AssignmentDate"]].to_sql("CaseAssignment", engine, if_exists="append", index=False
         )
-
-        return assign_df, day_back
+        days_searched = target_date - min(dates_back) if dates_back else timedelta(0)
+        return assign_df, day_back, days_searched.days
 
     # --------------------------
     # Load supervisor cases
@@ -374,11 +420,11 @@ class MainWindow(QtWidgets.QWidget):
         count = pd.read_sql(check_sql, conn).iloc[0,0]
 
         if count == 0:
-            assigned_df, days_back = self.generate_daily_assignment()
+            assigned_df, days_back, days_searched = self.generate_daily_assignment()
             if assigned_df is None:
                 return
             QtWidgets.QMessageBox.information(self, "Assignments Generated",
-                f"Assignments generated from {days_back} day(s) back.")
+                f"Assignments generated from {days_searched} day(s) back.")
         
         # Load supervisor's cases
         self.cases_df = self.load_supervisor_assignment(supervisor)
@@ -406,7 +452,7 @@ class MainWindow(QtWidgets.QWidget):
 
                 # Row Coloring based on Evaluation Status
                 if self.preview_df.iloc[r]["IsEvaluated"]:
-                    item.setBackground(QColor("#d3d3d3"))  # gray for evaluated
+                    item.setBackground(QColor("#A1A1A1"))  # gray for evaluated
                     item.setFlags(Qt.NoItemFlags)
                 else:
                     # Row coloring based on GeoAction
@@ -475,7 +521,7 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.copy_FR.setFixedWidth(80)
         self.copy_FR.setStyleSheet("""
             QPushButton {
-                # background-color: #0A3556;
+                # background-color: #367580;
                 color: white;
                 border-radius: 6px;
                 padding: 4px;
@@ -496,7 +542,7 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.copy_btn_ren.setFixedWidth(80)
         self.copy_btn_ren.setStyleSheet("""
             QPushButton {
-                # background-color: #367580;
+                background-color: #367580;
                 color: white;
                 border-radius: 6px;
                 padding: 4px;

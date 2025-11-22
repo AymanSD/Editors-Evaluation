@@ -1,0 +1,16 @@
+EvaluationApp 
+- Create CaseAssignment EvaluationTable
+- Create EvaluationTable
+- Distribute Cases to Supervisors equally:
+    - For each date
+    - No overlaps on editors/Cases on the same date 
+    - Append to CaseAssignment table
+    - for each editor select 2 cases (1 reject/ 1 edit)
+    - Evaluation Status Column (False by default)  
+- Add Navigation, copy FR/REN, Submit Buttons on the evaluation window
+- Control dropdown for evaluation criteria based on case type (reject/edit)
+- Color code cases based on GeoAction/Evaluation Status
+- Append to evaluation table on submit, with a submission validation procedure:
+    - Ensure all required fields are filled
+    - Ensure evaluated cases are not appended again to avoid duplicates
+- Add filtering option by date, editor, action, and region
