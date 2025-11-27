@@ -13,29 +13,34 @@ from datetime import date, datetime, timedelta
 # Database connection settings
 # ----------------------------
 DB_SETTINGS = {
-    # "server": "10.150.40.74",
-    # "dbname": "GRS",
-    "dbname": "GSA",
-    "user": "postgres",
-    "password": "1234",
-    # "host": "10.150.40.74",
-    "host": "localhost",
+    "dbname": "GRS",
+    "user": "evalApp",
+    "password": "app1234",
+    "host": "10.150.40.74",
     "port": "5432"
 }
 
 parent_directory = os.curdir
-print(parent_directory)
+# print(parent_directory)
 
-APP_ICON_PATH = r".\Assessment.png"
-logo = r".\Logo_icon.ico"
+APP_ICON_PATH = os.path.dirname(os.path.abspath(__file__)) + r"\Assessment.ico"
+logo = os.path.dirname(os.path.abspath(__file__)) + r"\logo.png"
+if not os.path.exists(APP_ICON_PATH):
+    APP_ICON_PATH = r"\\10.150.40.49\las\Ayman\Tools & Apps\Data For Tools\Icons\Assessment.ico"
+
+if os.path.exists(logo):
+    logo = r"\\10.150.40.49\las\Ayman\Tools & Apps\Data For Tools\Icons\logo.png"
 
 last_week = (datetime.today() - timedelta(days=7)).date()
 yesterday = (datetime.today() - timedelta(days=1)).date()
 
 # supervisorName = "Raseel alharthi"
-# login_id= os.getlogin()
-sup_ids = ["malnmar.c", "fhaddadi.c", "obakri.c", "ralotaibi.c", "falmarshed.c", "RAlharthi.c"]
-login_id = sup_ids[3]
+# login_id= os.getlogin().lower().strip()
+admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c",]]
+excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
+sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
+# login_id = sup_ids[2].lower().strip()
+login_id = 'aaldeen.c'
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -43,18 +48,126 @@ def get_connection():
     return psycopg2.connect(**DB_SETTINGS)
     # return create_engine(f"postgres ql://{DB_SETTINGS['user']}:{DB_SETTINGS["password"]}@{DB_SETTINGS["server"]}:{DB_SETTINGS["port"]}/{DB_SETTINGS["dbname"]}")
 
+def get_admins_upadtes():
+    conn = get_connection()
+    try:
+        query = """SELECT DISTINCT("UserID") FROM evaluation."EditorsList" 
+                WHERE "GroupID" IN ('COORDINATOR', 'Developers', 'TEAMLEADER', 'TRANING') 
+                AND "UserID" IS NOT NULL"""
+        df = pd.read_sql(query, conn)
+        admins = [str(u).lower().strip() for u in df["UserID"].unique().tolist()]
+        # print(">>",admins)
+        return admins
+    finally:
+        conn.close()
+
 def retrive_supervisor(supervisor_id):
     conn = get_connection()
-    query = """SELECT "SupervisorName" FROM "GeoCompletion" WHERE "SupervisorID"=%s"""
-    cursor = conn.cursor()
-    # cursor.execute("""SELECT "SupervisorName" FROM "GeoCompletion" WHERE "SupervisorID"=%s """, (supervisor_id,))
-    # results = cursor.fetchall()
-    name = str(pd.read_sql(query, conn, params=[supervisor_id])["SupervisorName"].unique().tolist()[0])
+    query = """SELECT DISTINCT("CaseProtalName"), "UserID" FROM evaluation."EditorsList" WHERE LOWER("UserID") = LOWER(%s)"""
+    if supervisor_id in admin_users:
+        return "Admin User"
+    else:
+        df = pd.read_sql(query, conn, params=[supervisor_id])
+        
+        if df.empty:
+            return None
+        name = str(df["CaseProtalName"].iloc[0])
+        print("==+==",name, supervisor_id)
+        return name
     # name = str(results["SupervisorName"].unique())
-    return name
 
-supervisorName = retrive_supervisor(login_id)
+def add_replacement(absent, replacement, start, end):
+    conn = get_connection()
+    absent_id = get_ids(absent)
+    replaced_id = get_ids(replacement)
+    cur = conn.cursor()
 
+    query = """
+        INSERT INTO evaluation."SupervisorReplacements"
+        ("AbsentSupervisor", "AbsentSupervisorID", "ReplacementSupervisor", "ReplacementSupervisorID", "StartDate", "EndDate")
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT ("AbsentSupervisor", "StartDate")
+        DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
+                      "EndDate" = EXCLUDED."EndDate";
+    """
+
+    cur.execute(query, (absent, absent_id, replacement, replaced_id, start, end))
+    conn.commit()
+    conn.close()
+
+def get_ids(name):
+    conn = get_connection()
+    query = """SELECT DISTINCT("UserID") FROM evaluation."EditorsList" WHERE "CaseProtalName" = %s """
+    try:
+        id = pd.read_sql(query, conn, params=[str(name)])
+        if id.empty:
+            print(query)
+            print(f"No Matches were found for {name}, {len(name)} ")
+            return None
+        print("===============\n",str(id["UserID"].tolist()[0]))
+        return str(id["UserID"].tolist()[0])
+    finally:
+        conn.close()
+
+def is_allowed_user(login_id):
+    conn = get_connection()
+    query = """SELECT DISTINCT("SupervisorID") FROM evaluation."EditorsList" 
+            WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
+            """
+    # max_days = 7
+    # current_date = datetime.now().date() -timedelta(days=1)
+    # for day in range(1, 7):
+    users = pd.read_sql(query, conn)
+    if not users.empty:
+        allowed_users = users["SupervisorID"].unique().tolist()
+        allowed_users = [i.lower() for i in allowed_users]
+        print(allowed_users)
+        if login_id in allowed_users or login_id in admin_users:
+            return True
+        else:
+            return False
+    # current_date -= timedelta(days=1)
+
+def get_replacement_supervisor(user):
+    conn = get_connection()
+    # cur = conn.cursor()
+
+    query = """
+        SELECT "AbsentSupervisor" FROM evaluation."SupervisorReplacements"
+        WHERE LOWER(%s) = LOWER("ReplacementSupervisorID")
+          AND CURRENT_DATE BETWEEN "StartDate" AND "EndDate"
+    """
+    row = pd.read_sql(query, conn, params=[user]).iloc[0,0] if not pd.read_sql(query, conn, params=[user]).empty else None
+    print(row)
+    # cur.execute(query, (user,))
+    # row = cur.fetchone()
+    conn.close()
+
+    return row
+
+def load_all_supervisors():
+    conn = get_connection()
+    query = """
+        SELECT DISTINCT("SupervisorName")
+        FROM evaluation."OpsData"
+        ORDER BY "SupervisorName"
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    if df.empty:
+        return None
+    potential_supervisors = [i.strip() for i in df[~df["SupervisorName"].isin(current_supervisors)]["SupervisorName"].tolist()]
+    return potential_supervisors
+
+supervisorName = retrive_supervisor(login_id)#.strip()
+print(login_id, supervisorName)
+admin_users = admin_users + [i for i in get_admins_upadtes() if i not in admin_users]
+print("+++++++++ ",admin_users)
+supervisors_sql = """SELECT DISTINCT("SupervisorName") FROM evaluation."EditorsList" 
+                    WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
+                    'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team') AND "SupervisorName" IS NOT NULL """
+engine = get_connection()
+current_supervisors = [i for i in pd.read_sql(supervisors_sql, engine)["SupervisorName"].tolist() if i not in excluded_supervisors]
 # ----------------------------
 # Main Window: Case List
 # ----------------------------
@@ -62,13 +175,13 @@ class MainWindow(QtWidgets.QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Evaluation System")
+        self.setWindowTitle("GRS Evaluation System V1.0")
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.resize(1000, 720)
 
         # 🌈 Apply light theme
         palette = QPalette()
-        palette.setColor(QPalette.Window, QColor("#E6EDF4"))
+        palette.setColor(QPalette.Window, QColor("#bdbdbd"))
         palette.setColor(QPalette.Base, QColor("#ffffff"))
         palette.setColor(QPalette.AlternateBase, QColor("#f3f3f3"))
         palette.setColor(QPalette.Button, QColor("#0A3556"))
@@ -85,18 +198,35 @@ class MainWindow(QtWidgets.QWidget):
 
         # icon = QPixmap(logo).scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio)
         # ----- Header Title -----
-        header = QtWidgets.QLabel("GRS - Team Evaluation System")
-        # self.header.setText(f'<img src="./Logo_icon.ico" width="24" height="24"> GRS - Team Evaluation System')
-        header.setFont(QFont("Cairo", 16, QFont.Bold))
-        header.setAlignment(Qt.AlignCenter)
-        header.setStyleSheet("""
-            QLabel {
-                background-color: #0A3556;
-                color: white;
-                padding: 12px;
-                border-bottom: 3px solid #005a9e;
-            }
-        """)
+        header = QtWidgets.QWidget()
+        header_layout = QtWidgets.QHBoxLayout(header)
+        logo = QtWidgets.QLabel()
+        pixmap = QPixmap("logo.png").scaled(110, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        logo.setPixmap(pixmap)
+
+        title = QtWidgets.QLabel("Team Evaluation System")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; margin-left: 10px; color: #0A3556;")
+        
+        self.remaining_label = QtWidgets.QLabel(f"{self.getRemainingCount(supervisorName, replacement)}")
+        self.remaining_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-right: 10px; color: #824131;")
+
+        # header = QtWidgets.QLabel("GRS - Team Evaluation System")
+        # # self.header.setText(f'<img src="./Logo_icon.ico" width="24" height="24"> GRS - Team Evaluation System')
+        # header.setFont(QFont("Cairo", 16, QFont.Bold))
+        # header.setAlignment(Qt.AlignCenter)
+        # header.setStyleSheet("""
+        #     QLabel {
+        #         background-color: #0A3556;
+        #         color: white;
+        #         padding: 12px;
+        #         border-bottom: 3px solid #005a9e;
+        #     }
+        # """)
+        header_layout.addWidget(logo)
+        # header_layout.addStretch()
+        header_layout.addWidget(title)
+        header_layout.addSpacing(15)
+        header_layout.addWidget(self.remaining_label)
         # main_layout.addWidget(icon)
         main_layout.addWidget(header)
 
@@ -126,8 +256,8 @@ class MainWindow(QtWidgets.QWidget):
         sidebar_layout.addWidget(title)
 
         # Supervisor
-        sidebar_layout.addWidget(QtWidgets.QLabel("Supervisor:"))
-        self.logged_supervisor = supervisorName  # replace 'current_user' with your variable
+        sidebar_layout.addWidget(QtWidgets.QLabel("User Name:"))
+        self.logged_supervisor = retrive_supervisor(login_id)  # replace 'current_user' with your variable
 
         self.sup_input = QtWidgets.QLineEdit(self.logged_supervisor)
         self.sup_input.setReadOnly(True)
@@ -143,23 +273,34 @@ class MainWindow(QtWidgets.QWidget):
         sidebar_layout.addWidget(self.sup_input)
         
         # Date range
-        sidebar_layout.addWidget(QtWidgets.QLabel("From:"))
-        self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-24))
+        # sidebar_layout.addWidget(QtWidgets.QLabel("From:"))
+        self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-7))
         self.start_date.setCalendarPopup(True)
-        sidebar_layout.addWidget(self.start_date)
+        # sidebar_layout.addWidget(self.start_date)
 
-        sidebar_layout.addWidget(QtWidgets.QLabel("To:"))
-        self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-18))
+        # sidebar_layout.addWidget(QtWidgets.QLabel("To:"))
+        self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())#.addDays(-1))
         self.end_date.setCalendarPopup(True)
-        sidebar_layout.addWidget(self.end_date)
-
+        # sidebar_layout.addWidget(self.end_date)
+        
+        # Supervisor:
+        
+        query = f"""SELECT "AssignedSupervisor","EditorName", "Region", "GeoAction" FROM evaluation."CaseAssignment" """
+        if login_id in admin_users:
+            sidebar_layout.addWidget(QtWidgets.QLabel("Supervisor:"))
+            self.supervisor_drop = QtWidgets.QComboBox()
+            self.supervisor_drop.addItem("")
+            conn = get_connection()
+            self.supervisor_drop.addItems(pd.read_sql(query, conn)['AssignedSupervisor'].unique().tolist())
+            
+            sidebar_layout.addWidget(self.supervisor_drop)
         # Editor
         sidebar_layout.addWidget(QtWidgets.QLabel("Editor:"))
         self.editor_drop = QtWidgets.QComboBox()
         self.editor_drop.addItem("")
-        query = f"""SELECT "EditorName", "Region", "GeoAction" FROM "CaseAssignment" 
-                Where "CompletionDate" BETWEEN '{self.start_date.date().toPyDate()}' AND '{self.end_date.date().toPyDate()}' 
-                AND "AssignedSupervisor" = '{supervisorName}' """
+        # query = f"""SELECT "EditorName", "Region", "GeoAction" FROM evaluation."CaseAssignment" """
+        if login_id not in admin_users:
+            query += f"""WHERE "AssignedSupervisor" = '{supervisorName}' """
         conn = get_connection()
         self.editor_drop.addItems(pd.read_sql(query, conn)['EditorName'].unique().tolist())
         sidebar_layout.addWidget(self.editor_drop)
@@ -182,24 +323,30 @@ class MainWindow(QtWidgets.QWidget):
         self.load_btn = QtWidgets.QPushButton("🔄 Load Cases")
         self.load_btn.setStyleSheet("""
             QPushButton {
-                background-color: #0A3556;
+                background-color: #367580;
                 color: white;
-                padding: 6px 12px;
+                padding: 6px;
                 border-radius: 6px;
+                font-weight: 200;
+                font-size: 11px;
+                width: 70%;
             }
             QPushButton:hover { background-color: #005a9e; }
         """)
         self.reset_btn = QtWidgets.QPushButton("🧹 Reset")
         self.reset_btn.setStyleSheet("""
             QPushButton {
-                background-color: #824131;
+                background-color: #BC9975;
                 color: white;
-                padding: 8px;
-                border-radius: 8px;
-                font-weight: 600;
+                padding: 6px;
+                border-radius: 6px;
+                font-weight: 400;
+                font-size: 12px;
+                width: 30%;
             }
             QPushButton:hover { background-color: #a1503e; }
         """)
+        
         fil_btn_layout = QtWidgets.QHBoxLayout()
         # Button row (optional)
         fil_btn_layout.setSpacing(15)
@@ -208,6 +355,11 @@ class MainWindow(QtWidgets.QWidget):
         fil_btn_layout.addWidget(self.reset_btn)
         sidebar_layout.addLayout(fil_btn_layout)
         sidebar_layout.addStretch()
+
+        admin_btn = QtWidgets.QPushButton("Manage Replacements")
+        admin_btn.clicked.connect(lambda: ReplacementManager().exec_())
+        if login_id in admin_users:
+            sidebar_layout.addWidget(admin_btn)
 
         # ----- Main area -----
         main_area = QtWidgets.QWidget()
@@ -248,35 +400,137 @@ class MainWindow(QtWidgets.QWidget):
         self.cases_df = pd.DataFrame()
 
     # --------------------------
+    # Get Remaining Cases Count
+    # --------------------------
+    def getRemainingCount(self, supervisor_name, replacement_name):
+        conn = get_connection()
+        supervisorName = supervisor_name
+        remaining_query = """
+            SELECT COUNT(*) FROM evaluation."CaseAssignment"
+            WHERE "IsEvaluated" = FALSE
+        """
+        if login_id in admin_users:
+            pass
+        else:
+            if replacement_name:
+                print(replacement_name)
+                supervisorName = replacement_name
+            remaining_query += """AND "AssignedSupervisor" = %s """
+            print("=>>> Current Supervisor:", str(supervisorName))
+        return str(pd.read_sql(remaining_query, conn, params=[supervisorName]).iloc[0,0])
+    
+    # def replace_existingCases(self):
+    #     query = """SELECT *
+    #             FROM evaluation."CaseAssignment"
+    #             WHERE "IsEvaluated" = FALSE """
+    #     op_data = """SELECT *
+    #             FROM evaluation."CaseAssignment"
+    #             WHERE "IsEvaluated" = FALSE """
+    #     df = 
+
+    def check_unevaluateded_status(self):
+        conn = get_connection()
+        
+        # 1. Fetch all un-evaluated assignments
+        query_assignments = """
+            SELECT *
+            FROM evaluation."CaseAssignment"
+            WHERE "IsEvaluated" = FALSE
+            AND "UniqueKey" NOT IN (
+            SELECT "UniqueKey" FROM evaluation."OpsData" 
+            WHERE "GEO S Completion" < CURRENT_DATE - 1)
+        """
+        assignments = pd.read_sql(query_assignments, conn)
+        
+        if assignments.empty:
+            return  # Nothing to do
+        
+        print(f"There are {len(assignments)} un-evaluated cases to be updated")
+        
+        # 2. Loop through each assignment and check if case exists in OpsData
+        for idx, row in assignments.iterrows():
+            assign_id = ["AssignmentID"]
+            case_id = row["UniqueKey"]
+            editor = row["EditorName"]
+            supervisor = row["AssignedSupervisor"]
+            geo_action = row["GeoAction"]
+            
+            # Check if the case exists in OpsData
+            check_query = """SELECT 1 FROM evaluation."OpsData" WHERE "UniqueKey" = %s"""
+            exists = pd.read_sql(check_query, conn, params=[case_id])
+            
+            if exists.empty:
+                # Case no longer exists, fetch replacement using same logic as daily assignment
+                replacement_query = """
+                    SELECT * FROM evaluation."OpsData"
+                    WHERE "EditorName" = %s
+                    AND "GeoAction" = %s
+                    AND "UniqueKey" NOT IN (
+                    SELECT "UniqueKey" FROM evaluation."EvaluationTable"
+                    UNION
+                    SELECT "UniqueKey" FROM evaluation."CaseAssignment"
+                )
+                    ORDER BY "GEO S Completion" DESC
+                    LIMIT 1
+                """
+                replacement = pd.read_sql(replacement_query, conn, params=[editor, geo_action])
+                
+                if not replacement.empty:
+                    replacement_case = replacement.iloc[0]
+                    
+                    # Update the assignment row with the new case info
+                    update_query = """
+                        UPDATE evaluation."CaseAssignment"
+                        SET "UniqueKey" = %s,
+                            "Case Nmber" = %s,
+                            "REN" = %s,
+                            "CompletionDate" = %s,
+                            "EditorRecommendation" = %s,
+                            "SupervisorName" = %s,
+                            "GroupID" = %s,
+                            "Region" = %s,
+                        WHERE "AssignmentID" = %s
+                    """
+                    values = replacement_case.loc[0, ["UniqueKey", "Case Nmber", "REN", "CompletionDate",
+                                                    "EditorRecommendation", "SupervisorName", "GroupID",
+                                                    "Region"]].tolist() + [assign_id]
+
+                    print(f"Case: {case_id} is replaced by: {values[0]}")
+                    # conn.execute(update_query, values)
+
+    # --------------------------
     # On-demand assignment
     # --------------------------
     def generate_daily_assignment(self):
-        max_days = 7
+        self.check_unevaluateded_status()
+        max_days = 360
         day_back = 1
         found_cases = False
-        engine = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
+        engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
         conn = get_connection()
+        active_editors = pd.read_sql("""SELECT DISTINCT("CaseProtalName") FROM evaluation."EditorsList" """, conn)["CaseProtalName"].tolist()
         while day_back <= max_days:
-            target_date = self.end_date.date().toPyDate() - timedelta(days=day_back)
-            # Pull yesterday's cases
+            target_date = self.end_date.date().toPyDate() - timedelta(days=1)
+                 # Pull yesterday's cases
             sql = """
                 SELECT *
-                FROM "GeoCompletion"
+                FROM evaluation."OpsData"
                 WHERE "GEO S Completion"::date = %s
-                AND "GeoAction" IS NOT NULL
-                AND "GroupID" IN ('Editor Morning shift  ', 'Editor Night Shift')
+                AND "GeoAction" IS NOT NULL AND "GeoAction" <> 'No Action'
+                AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
                 AND "UniqueKey" NOT IN (
-                    SELECT "UniqueKey" FROM "EvaluationTable"
+                    SELECT "UniqueKey" FROM evaluation."EvaluationTable"
                     UNION
-                    SELECT "UniqueKey" FROM "CaseAssignment"
+                    SELECT "UniqueKey" FROM evaluation."CaseAssignment"
                 )
             """
             df = pd.read_sql(sql, conn, params=[target_date])
 
-            if not df.empty:
+            if not df.empty or len(df["Geo Supervisor"].unique().tolist()) >= 20:
                 found_cases = True
                 break
             day_back += 1
+            print(f"No cases found on {target_date}. Searching back {day_back} days...")
 
         if not found_cases:
             QtWidgets.QMessageBox.warning(None, "No Cases", 
@@ -284,7 +538,8 @@ class MainWindow(QtWidgets.QWidget):
             return None, day_back-1
 
         # Editors and Supervisors for assignment
-        supervisors = [i for i in df["SupervisorName"].unique() if not pd.isnull(i)]
+
+        supervisors = [i for i in df["SupervisorName"].unique() if not pd.isnull(i) and i not in excluded_supervisors]
         excluded = ["Mahmoud Aboalmaged", "Moataz Ibrahim"] + [i for i in supervisors]
         editors = [i for i in df["Geo Supervisor"].unique() if not pd.isnull(i) and i not in excluded]
         random.shuffle(supervisors)
@@ -294,7 +549,7 @@ class MainWindow(QtWidgets.QWidget):
         # Create a list of all dates to search, starting with target_date
         search_dates = [self.end_date.date().toPyDate() - timedelta(days=x) for x in range(1, max_days + 1)]
         dates_back = []
-        for i, editor in enumerate(editors):
+        for i, editor in enumerate(active_editors):
             # 1 — Get cases for this editor from the primary (target) date
             editor_cases = df[df["Geo Supervisor"] == editor]
 
@@ -310,15 +565,15 @@ class MainWindow(QtWidgets.QWidget):
                         dates_back.append(d)
                     sql_more = """
                         SELECT *
-                        FROM "GeoCompletion"
+                        FROM evaluation."OpsData"
                         WHERE "GEO S Completion"::date = %s
-                        AND "GeoAction" IS NOT NULL
-                        AND "GroupID" IN ('Editor Morning shift  ', 'Editor Night Shift')
+                        AND "GeoAction" IS NOT NULL AND "GeoAction" <> 'No Action'
+                        AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
                         AND "Geo Supervisor" = %s
                         AND "UniqueKey" NOT IN (
-                                SELECT "UniqueKey" FROM "EvaluationTable"
+                                SELECT "UniqueKey" FROM evaluation."EvaluationTable"
                                 UNION
-                                SELECT "UniqueKey" FROM "CaseAssignment"
+                                SELECT "UniqueKey" FROM evaluation."CaseAssignment"
                         )
                     """
 
@@ -371,8 +626,8 @@ class MainWindow(QtWidgets.QWidget):
         assign_df = assign_df.rename({"GEO S Completion":"CompletionDate", "Geo Supervisor":"EditorName", 
                                       "Geo Supervisor Recommendation":"EditorRecommendation"}, axis=1)
         assign_df[["UniqueKey","Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", "SupervisorName", "GroupID", "GeoAction",
-                   "Region", "AssignedSupervisor","AssignmentDate"]].to_sql("CaseAssignment", engine, if_exists="append", index=False
-        )
+                   "Region", "AssignedSupervisor","AssignmentDate"]].to_sql("CaseAssignment", engine, schema='evaluation', if_exists="append", index=False)
+        
         days_searched = target_date - min(dates_back) if dates_back else timedelta(0)
         return assign_df, day_back, days_searched.days
 
@@ -383,22 +638,56 @@ class MainWindow(QtWidgets.QWidget):
         editor = self.editor_drop.currentText().strip()
         region = self.region_combo.currentText().strip()
         action = self.action_combo.currentText().strip()
-        conn = get_connection()
-        sql = """
-            SELECT *
-            FROM "CaseAssignment"
-            WHERE "AssignedSupervisor" = %s
-            AND "IsEvaluated" = FALSE
-        """
-        if editor:
-            sql += f"""AND "EditorName" = '{editor}' """
-        if action:
-            sql += f"""AND "GeoAction" = '{action}' """
-        if region:
-            sql += f"""AND "Region" = '{region}' """
 
-        sql += 'ORDER BY "EditorName" '
-        df = pd.read_sql(sql, conn, params=[supervisor_name])
+        conn = get_connection()
+
+        # --- Replacement Supervisor ---
+        replace_supervisor = get_replacement_supervisor(login_id)
+        if replace_supervisor:
+            supervisor_name = replace_supervisor
+
+        # --- Query Construction ---
+        base_query = """
+            SELECT *
+            FROM evaluation."CaseAssignment"
+        """
+
+        where_clauses = []
+        params = []
+
+        # --- Admin Mode: can see all supervisors ---
+        if login_id not in admin_users:
+            where_clauses.append('"AssignedSupervisor" = %s')
+            params.append(supervisor_name)
+        else:
+            supervisor = self.supervisor_drop.currentText().strip()
+            if supervisor:
+                where_clauses.append('"AssignedSupervisor" = %s')
+                params.append(supervisor)
+
+        # Common filters for both admin and normal users
+        where_clauses.append('("IsEvaluated" = FALSE OR "AssignmentDate" = CURRENT_DATE)')
+
+        if editor:
+            where_clauses.append('"EditorName" = %s')
+            params.append(editor)
+
+        if action:
+            where_clauses.append('"GeoAction" = %s')
+            params.append(action)
+
+        if region:
+            where_clauses.append('"Region" = %s')
+            params.append(region)
+
+        # Final SQL
+        sql = base_query + " WHERE " + " AND ".join(where_clauses) + ' ORDER BY "EditorName"'
+
+        # Debug print if needed
+        # print("SQL:", sql)
+        # print("Params:", params)
+
+        df = pd.read_sql(sql, conn, params=params)
         return df
 
     # --------------------------
@@ -406,6 +695,7 @@ class MainWindow(QtWidgets.QWidget):
     # --------------------------
     def load_cases(self):
         supervisor = self.sup_input.text().strip()
+        replacement_supervisor = get_replacement_supervisor(login_id)
         if not supervisor:
             QtWidgets.QMessageBox.warning(self, "Error", "Please enter Supervisor Name.")
             return
@@ -414,7 +704,7 @@ class MainWindow(QtWidgets.QWidget):
 
         # Check if assignments exist
         check_sql = """
-            SELECT COUNT(*) FROM "CaseAssignment"
+            SELECT COUNT(*) FROM evaluation."CaseAssignment"
             WHERE "AssignmentDate" = CURRENT_DATE
         """
         count = pd.read_sql(check_sql, conn).iloc[0,0]
@@ -463,6 +753,7 @@ class MainWindow(QtWidgets.QWidget):
                         item.setBackground(QColor("#c2f0c2"))  # Light green
 
                 self.table.setItem(r, c, item)
+        self.remaining_label.setText(str(self.getRemainingCount(supervisor, replacement_supervisor)))
 
     def reset_filters(self):
         """Reset all filters to default state."""
@@ -470,8 +761,8 @@ class MainWindow(QtWidgets.QWidget):
         self.editor_drop.clear()
         self.action_combo.setCurrentIndex(0)
         self.region_combo.setCurrentIndex(0)
-        self.start_date.setDate(QtCore.QDate.currentDate().addDays(-24))
-        self.end_date.setDate(QtCore.QDate.currentDate().addDays(-17))
+        self.start_date.setDate(QtCore.QDate.currentDate().addDays(-7))
+        self.end_date.setDate(QtCore.QDate.currentDate())#.addDays(-1))
 
     def open_evaluation(self, row, column):
         if self.cases_df.empty:
@@ -806,8 +1097,8 @@ class EvaluationWindow(QtWidgets.QDialog):
                 QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
                     f"Please complete all required fields before submitting. Missing input for {message}.")
                 return
-            topology_score     = score(topology, 0.35)
-            completeness_score = score(completeness, 0.4)
+            topology_score     = score(topology, 0.25)
+            completeness_score = score(completeness, 0.5)
             blockalign_score   = score(blockalign, 0.25)
 
         # 3️⃣ Aggregated scores
@@ -835,7 +1126,7 @@ class EvaluationWindow(QtWidgets.QDialog):
 
         # 5️⃣ Insert into database
         conn = get_connection()
-        evaluatedCases = pd.read_sql("""SELECT "UniqueKey" FROM "EvaluationTable" """, conn)
+        evaluatedCases = pd.read_sql("""SELECT "UniqueKey" FROM evaluation."EvaluationTable" """, conn)
         
         if case['UniqueKey'] in evaluatedCases["UniqueKey"].values:
             QtWidgets.QMessageBox.warning(self, "Duplicated Entry", f"Case {case['Case Number']} has already been evaluated.")
@@ -843,7 +1134,7 @@ class EvaluationWindow(QtWidgets.QDialog):
         else:
             with conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO "EvaluationTable"
+                    INSERT INTO evaluation."EvaluationTable"
                     ("UniqueKey","Case Number","CompletionDate","EditorRecommendation", "EditorName","SupervisorName","GroupID","GeoAction",
                     "Procedure","ProcedureScore","Recommendation","RecommendationScore", "Topology","TopologyScore","Completeness","CompletenessScore",
                     "BlockAlignment","BlockAlignmentScore","ProceduralAccuracy", "TechnicalAccuracy","EvaluatedBy","EvaluationDate")
@@ -853,7 +1144,7 @@ class EvaluationWindow(QtWidgets.QDialog):
                 conn.commit()
             # Update EvaluationStatus On Assignment Table
             update_sql = """
-                UPDATE "CaseAssignment"
+                UPDATE evaluation."CaseAssignment"
                 SET "IsEvaluated" = TRUE
                 WHERE "UniqueKey" = %s
                 AND "AssignedSupervisor" = %s
@@ -862,11 +1153,60 @@ class EvaluationWindow(QtWidgets.QDialog):
                 cur.execute(update_sql, (case["UniqueKey"], self.supervisor_name))
                 conn.commit()
 
+            # self.remaining_label.setText(str(self.getRemainingCount()))
             
-
-
             conn.close()
             QtWidgets.QMessageBox.information(self, "Success", "Evaluation submitted!")
+
+class ReplacementManager(QtWidgets.QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Supervisor Replacement Manager")
+        self.resize(350, 200)
+
+        layout = QtWidgets.QVBoxLayout(self)
+
+        # Absent supervisor
+        self.absent_combo = QtWidgets.QComboBox()
+        self.absent_combo.addItems(current_supervisors)  
+
+        # Replacement supervisor
+        self.replacement_combo = QtWidgets.QComboBox()
+        self.replacement_combo.addItems(load_all_supervisors())
+
+        # Date pickers
+        self.start_date = QtWidgets.QDateEdit()
+        self.start_date.setCalendarPopup(True)
+        self.start_date.setDate(QtCore.QDate.currentDate())
+
+        self.end_date = QtWidgets.QDateEdit()
+        self.end_date.setCalendarPopup(True)
+        self.end_date.setDate(QtCore.QDate.currentDate())
+
+        # Button
+        save_btn = QtWidgets.QPushButton("Save Replacement")
+        save_btn.clicked.connect(self.save_replacement)
+
+        # Add fields
+        layout.addWidget(QtWidgets.QLabel("Absent Supervisor:"))
+        layout.addWidget(self.absent_combo)
+        layout.addWidget(QtWidgets.QLabel("Replacement Supervisor:"))
+        layout.addWidget(self.replacement_combo)
+        layout.addWidget(QtWidgets.QLabel("Start Date:"))
+        layout.addWidget(self.start_date)
+        layout.addWidget(QtWidgets.QLabel("End Date:"))
+        layout.addWidget(self.end_date)
+        layout.addWidget(save_btn)
+
+    def save_replacement(self):
+        absent = self.absent_combo.currentText()
+        replacement = self.replacement_combo.currentText()
+        start = self.start_date.date().toPyDate()
+        end = self.end_date.date().toPyDate()
+
+        add_replacement(absent, replacement, start, end)
+
+        QtWidgets.QMessageBox.information(self, "Success", "Replacement saved!")
 
 
 
@@ -875,6 +1215,19 @@ class EvaluationWindow(QtWidgets.QDialog):
 # ----------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
+    if supervisorName is None:
+        
+        QtWidgets.QMessageBox.critical(
+            None,
+            "Access Denied",
+            f"Your login ID '{login_id}' is not registered as a supervisor."
+        )
+        sys.exit()  # block app launch
+    replacement = get_replacement_supervisor(login_id)
+    print(f'------------------{replacement}')
+    if not is_allowed_user(login_id) and not replacement:
+        QtWidgets.QMessageBox.critical(None, "Access Denied", "You do not have permission to use this application.")
+        sys.exit(1)
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
