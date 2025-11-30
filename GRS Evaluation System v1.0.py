@@ -442,6 +442,7 @@ class MainWindow(QtWidgets.QWidget):
             FROM evaluation."CaseAssignment"
             WHERE "IsEvaluated" = FALSE
             AND "IsRetired" = FALSE
+            AND "AssignmentDate" <> CURRENT_DATE
             AND "UniqueKey" NOT IN (SELECT "UniqueKey" FROM evaluation."OpsData")
         """
         assignments = pd.read_sql(query_assignments, conn)
@@ -516,10 +517,10 @@ class MainWindow(QtWidgets.QWidget):
 
                     print(f"Case: {case_id} is replaced by: {values[0]}")
                     cur = conn.cursor()
-                    cur.execute(update_query, assign_id)
+                    cur.execute(update_query, [assign_id])
                     cur.execute("""
                         INSERT INTO evaluation."CaseAssignment"
-                        ("UniqueKey", "Case Number", "REN", "GeoCompletion", "EditorName", "EditorRecommendation", 
+                        ("UniqueKey", "Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", 
                         "SupervisorName", "GroupID", "GeoAction", "Region", "AssignedSupervisor", "AssignmentDate")
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     """, values)
