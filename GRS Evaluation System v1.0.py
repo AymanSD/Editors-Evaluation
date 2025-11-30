@@ -13,12 +13,15 @@ from datetime import date, datetime, timedelta
 # Database connection settings
 # ----------------------------
 DB_SETTINGS = {
-    "dbname": "GRS",
+    "dbname": "GSA",
+    # "dbname": "GRS",
     "user": "evalApp",
     "password": "app1234",
-    "host": "10.150.40.74",
+    # "host": "10.150.40.74",
+    "host":"127.0.0.1",
     "port": "5432"
 }
+
 
 parent_directory = os.curdir
 # print(parent_directory)
@@ -32,7 +35,7 @@ if os.path.exists(logo):
     logo = r"\\10.150.40.49\las\Ayman\Tools & Apps\Data For Tools\Icons\logo.png"
 
 last_week = (datetime.today() - timedelta(days=7)).date()
-yesterday = (datetime.today() - timedelta(days=1)).date()
+yesterday = (datetime.today() - timedelta(days=1)).date( )
 
 # supervisorName = "Raseel alharthi"
 # login_id= os.getlogin().lower().strip()
@@ -40,7 +43,8 @@ admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c",]]
 excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 # login_id = sup_ids[2].lower().strip()
-login_id = 'aaldeen.c'
+login_id = admin_users[0].lower().strip()
+# login_id = 'aaldeen.c'
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -63,7 +67,7 @@ def get_admins_upadtes():
 
 def retrive_supervisor(supervisor_id):
     conn = get_connection()
-    query = """SELECT DISTINCT("CaseProtalName"), "UserID" FROM evaluation."EditorsList" WHERE LOWER("UserID") = LOWER(%s)"""
+    query = """SELECT DISTINCT("CasePortalName"), "UserID" FROM evaluation."EditorsList" WHERE LOWER("UserID") = LOWER(%s)"""
     if supervisor_id in admin_users:
         return "Admin User"
     else:
@@ -71,33 +75,14 @@ def retrive_supervisor(supervisor_id):
         
         if df.empty:
             return None
-        name = str(df["CaseProtalName"].iloc[0])
+        name = str(df["CasePortalName"].iloc[0])
         print("==+==",name, supervisor_id)
         return name
     # name = str(results["SupervisorName"].unique())
 
-def add_replacement(absent, replacement, start, end):
-    conn = get_connection()
-    absent_id = get_ids(absent)
-    replaced_id = get_ids(replacement)
-    cur = conn.cursor()
-
-    query = """
-        INSERT INTO evaluation."SupervisorReplacements"
-        ("AbsentSupervisor", "AbsentSupervisorID", "ReplacementSupervisor", "ReplacementSupervisorID", "StartDate", "EndDate")
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT ("AbsentSupervisor", "StartDate")
-        DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
-                      "EndDate" = EXCLUDED."EndDate";
-    """
-
-    cur.execute(query, (absent, absent_id, replacement, replaced_id, start, end))
-    conn.commit()
-    conn.close()
-
 def get_ids(name):
     conn = get_connection()
-    query = """SELECT DISTINCT("UserID") FROM evaluation."EditorsList" WHERE "CaseProtalName" = %s """
+    query = """SELECT DISTINCT("UserID") FROM evaluation."EditorsList" WHERE "CasePortalName" = %s """
     try:
         id = pd.read_sql(query, conn, params=[str(name)])
         if id.empty:
@@ -138,12 +123,32 @@ def get_replacement_supervisor(user):
           AND CURRENT_DATE BETWEEN "StartDate" AND "EndDate"
     """
     row = pd.read_sql(query, conn, params=[user]).iloc[0,0] if not pd.read_sql(query, conn, params=[user]).empty else None
-    print(row)
+    print(f'***************{row}')
     # cur.execute(query, (user,))
     # row = cur.fetchone()
     conn.close()
 
     return row
+
+def add_replacement(absent, replacement, start, end):
+    conn = get_connection()
+    absent_id = get_ids(absent)
+    replaced_id = get_ids(replacement)
+    cur = conn.cursor()
+
+    query = """
+        INSERT INTO evaluation."SupervisorReplacements"
+        ("AbsentSupervisor", "AbsentSupervisorID", "ReplacementSupervisor", "ReplacementSupervisorID", "StartDate", "EndDate")
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT ("AbsentSupervisor", "StartDate")
+        DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
+                      "EndDate" = EXCLUDED."EndDate";
+    """
+
+    cur.execute(query, (absent, absent_id, replacement, replaced_id, start, end))
+    conn.commit()
+    conn.close()
+
 
 def load_all_supervisors():
     conn = get_connection()
@@ -413,10 +418,10 @@ class MainWindow(QtWidgets.QWidget):
             pass
         else:
             if replacement_name:
-                print(replacement_name)
+                # print(replacement_name)
                 supervisorName = replacement_name
             remaining_query += """AND "AssignedSupervisor" = %s """
-            print("=>>> Current Supervisor:", str(supervisorName))
+            # print("=>>> Current Supervisor:", str(supervisorName))
         return str(pd.read_sql(remaining_query, conn, params=[supervisorName]).iloc[0,0])
     
     # def replace_existingCases(self):
@@ -436,9 +441,8 @@ class MainWindow(QtWidgets.QWidget):
             SELECT *
             FROM evaluation."CaseAssignment"
             WHERE "IsEvaluated" = FALSE
-            AND "UniqueKey" NOT IN (
-            SELECT "UniqueKey" FROM evaluation."OpsData" 
-            WHERE "GEO S Completion" < CURRENT_DATE - 1)
+            AND "IsRetired" = FALSE
+            AND "UniqueKey" NOT IN (SELECT "UniqueKey" FROM evaluation."OpsData")
         """
         assignments = pd.read_sql(query_assignments, conn)
         
@@ -448,12 +452,20 @@ class MainWindow(QtWidgets.QWidget):
         print(f"There are {len(assignments)} un-evaluated cases to be updated")
         
         # 2. Loop through each assignment and check if case exists in OpsData
+        QtWidgets.QMessageBox.warning(None, "Unresolved Assignments", 
+                f"There are {len(assignments)} unresolved cases.")
         for idx, row in assignments.iterrows():
-            assign_id = ["AssignmentID"]
+            assign_id = row["AssignmentID"]
             case_id = row["UniqueKey"]
             editor = row["EditorName"]
-            supervisor = row["AssignedSupervisor"]
+            assigned_supervisor = row["AssignedSupervisor"]
+            assignment_date = row["AssignmentDate"]
             geo_action = row["GeoAction"]
+
+            if geo_action=="رفض":
+                action_query = f"""AND "GeoAction" = '{geo_action}' """
+            else:
+                action_query = """AND "GeoAction" NOT IN ('رفض','No Action') """
             
             # Check if the case exists in OpsData
             check_query = """SELECT 1 FROM evaluation."OpsData" WHERE "UniqueKey" = %s"""
@@ -461,10 +473,11 @@ class MainWindow(QtWidgets.QWidget):
             
             if exists.empty:
                 # Case no longer exists, fetch replacement using same logic as daily assignment
-                replacement_query = """
+                
+                replacement_query = f"""
                     SELECT * FROM evaluation."OpsData"
                     WHERE "EditorName" = %s
-                    AND "GeoAction" = %s
+                    {action_query}
                     AND "UniqueKey" NOT IN (
                     SELECT "UniqueKey" FROM evaluation."EvaluationTable"
                     UNION
@@ -473,44 +486,64 @@ class MainWindow(QtWidgets.QWidget):
                     ORDER BY "GEO S Completion" DESC
                     LIMIT 1
                 """
-                replacement = pd.read_sql(replacement_query, conn, params=[editor, geo_action])
+                replacement = pd.read_sql(replacement_query, conn, params=[editor])#.iloc[0]
                 
                 if not replacement.empty:
                     replacement_case = replacement.iloc[0]
-                    
+                    replacement_case["REN"] = replacement_case["REN"].astype(str)
+                    print(replacement_case)
                     # Update the assignment row with the new case info
-                    update_query = """
-                        UPDATE evaluation."CaseAssignment"
-                        SET "UniqueKey" = %s,
-                            "Case Nmber" = %s,
-                            "REN" = %s,
-                            "CompletionDate" = %s,
-                            "EditorRecommendation" = %s,
-                            "SupervisorName" = %s,
-                            "GroupID" = %s,
-                            "Region" = %s,
-                        WHERE "AssignmentID" = %s
-                    """
-                    values = replacement_case.loc[0, ["UniqueKey", "Case Nmber", "REN", "CompletionDate",
-                                                    "EditorRecommendation", "SupervisorName", "GroupID",
-                                                    "Region"]].tolist() + [assign_id]
+                    # update_query = """
+                    #     UPDATE evaluation."CaseAssignment"
+                    #     SET "UniqueKey" = %s,
+                    #         "Case Number" = %s,
+                    #         "REN" = %s,
+                    #         "CompletionDate" = %s,
+                    #         "EditorRecommendation" = %s,
+                    #         "GeoAction" = %s,
+                    #         "SupervisorName" = %s,
+                    #         "GroupID" = %s,
+                    #         "Region" = %s
+                    #     WHERE "AssignmentID" = %s
+                    # """
+                    update_query = """UPDATE evaluation."CaseAssignment"
+                                    SET "IsRetired" = TRUE
+                                     WHERE "AssignmentID" = %s """
+                    cols =  ["UniqueKey", "Case Number", "REN", "GEO S Completion", "Geo Supervisor", 
+                             "Geo Supervisor Recommendation", "SupervisorName", "GroupID", "GeoAction", "Region"]
+                    values = replacement_case[cols].tolist() + [assigned_supervisor, assignment_date]
+                    print(len(values))
 
                     print(f"Case: {case_id} is replaced by: {values[0]}")
-                    # conn.execute(update_query, values)
+                    cur = conn.cursor()
+                    cur.execute(update_query, assign_id)
+                    cur.execute("""
+                        INSERT INTO evaluation."CaseAssignment"
+                        ("UniqueKey", "Case Number", "REN", "GeoCompletion", "EditorName", "EditorRecommendation", 
+                        "SupervisorName", "GroupID", "GeoAction", "Region", "AssignedSupervisor", "AssignmentDate")
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, values)
+                    conn.commit()
+                    cur.close()
 
     # --------------------------
     # On-demand assignment
     # --------------------------
     def generate_daily_assignment(self):
         self.check_unevaluateded_status()
-        max_days = 360
+        max_days = 180
         day_back = 1
         found_cases = False
-        engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
+        # engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
+        engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
         conn = get_connection()
-        active_editors = pd.read_sql("""SELECT DISTINCT("CaseProtalName") FROM evaluation."EditorsList" """, conn)["CaseProtalName"].tolist()
+        active_editors = pd.read_sql("""SELECT DISTINCT("CasePortalName") FROM evaluation."EditorsList" 
+                                     WHERE "CasePortalName" IS NOT NULL
+                                     AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
+                                     """, conn)["CasePortalName"].tolist()
         while day_back <= max_days:
-            target_date = self.end_date.date().toPyDate() - timedelta(days=1)
+            target_date = self.end_date.date().toPyDate() - timedelta(days=day_back)
+            # print(f"Searching Cases on {target_date}")
                  # Pull yesterday's cases
             sql = """
                 SELECT *
@@ -526,11 +559,11 @@ class MainWindow(QtWidgets.QWidget):
             """
             df = pd.read_sql(sql, conn, params=[target_date])
 
-            if not df.empty or len(df["Geo Supervisor"].unique().tolist()) >= 20:
+            if not df.empty:# or len(df["Geo Supervisor"].unique().tolist()) >= 20:
                 found_cases = True
                 break
             day_back += 1
-            print(f"No cases found on {target_date}. Searching back {day_back} days...")
+            # print(f"No cases found on {target_date}. Searching back {day_back} days...")
 
         if not found_cases:
             QtWidgets.QMessageBox.warning(None, "No Cases", 
@@ -541,7 +574,7 @@ class MainWindow(QtWidgets.QWidget):
 
         supervisors = [i for i in df["SupervisorName"].unique() if not pd.isnull(i) and i not in excluded_supervisors]
         excluded = ["Mahmoud Aboalmaged", "Moataz Ibrahim"] + [i for i in supervisors]
-        editors = [i for i in df["Geo Supervisor"].unique() if not pd.isnull(i) and i not in excluded]
+        editors = [i for i in active_editors if not pd.isnull(i) and i not in excluded]
         random.shuffle(supervisors)
 
         assignments = []
@@ -555,12 +588,12 @@ class MainWindow(QtWidgets.QWidget):
 
             reject_case = editor_cases[editor_cases["GeoAction"] == 'رفض']
             edit_case = editor_cases[editor_cases["GeoAction"] != 'رفض']
-            print(f"==================================================\n Initial Df Editor: {editor} | Date: {target_date}\n{len(reject_case)}, {len(edit_case)}")
+            # print(f"==================================================\n Initial Df Editor: {editor} | Date: {target_date}\n{len(reject_case)}, {len(edit_case)}")
             # 2 — If missing categories → search older dates
             if reject_case.empty or edit_case.empty:
 
                 for d in search_dates[1:]:  # skip target_date already checked
-                    print(f"==================================================\n Searching for cases on {d}")
+                    # print(f"==================================================\n Searching for cases on {d}")
                     if d not in dates_back:
                         dates_back.append(d)
                     sql_more = """
@@ -590,7 +623,7 @@ class MainWindow(QtWidgets.QWidget):
                     if edit_case.empty:
                         edit_case = df_more[df_more["GeoAction"] != "رفض"]
                         # edit_case = pd.concat([edit_case, df_more[df_more["GeoAction"] != "رفض"]])
-                    print(editor,":", len(reject_case), "/ ", len(edit_case))
+                    # print(editor,":", len(reject_case), "/ ", len(edit_case))
                     # Stop searching if both categories found
                     if not reject_case.empty and not edit_case.empty:
                         break
@@ -1215,16 +1248,16 @@ class ReplacementManager(QtWidgets.QDialog):
 # ----------------------------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
-    if supervisorName is None:
+    # if supervisorName is None:
         
-        QtWidgets.QMessageBox.critical(
-            None,
-            "Access Denied",
-            f"Your login ID '{login_id}' is not registered as a supervisor."
-        )
-        sys.exit()  # block app launch
+    #     QtWidgets.QMessageBox.critical(
+    #         None,
+    #         "Access Denied",
+    #         f"Your login ID '{login_id}' is not registered as a supervisor."
+    #     )
+    #     sys.exit()  # block app launch
     replacement = get_replacement_supervisor(login_id)
-    print(f'------------------{replacement}')
+    print(f'------------------{replacement}, {is_allowed_user(login_id)}, {supervisorName}')
     if not is_allowed_user(login_id) and not replacement:
         QtWidgets.QMessageBox.critical(None, "Access Denied", "You do not have permission to use this application.")
         sys.exit(1)
