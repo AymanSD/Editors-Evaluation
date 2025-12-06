@@ -2,7 +2,9 @@ import sys
 import os
 import psycopg2
 import random
-from PyQt5 import QtWidgets, QtCore
+import openpyxl
+from PyQt5 import QtWidgets, QtCore 
+from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QPixmap
 from PyQt5.QtCore import Qt
 from sqlalchemy import create_engine, text
@@ -38,13 +40,13 @@ last_week = (datetime.today() - timedelta(days=7)).date()
 yesterday = (datetime.today() - timedelta(days=1)).date( )
 
 # supervisorName = "Raseel alharthi"
-# login_id= os.getlogin().lower().strip()
-admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c", "aalhares.c", "LMohammed.c",  "AMagboul.c", "telwahab.c", "nalsuhaimi.c"]]
+login_id= os.getlogin().lower().strip()
+admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c", "aalhares.c", "LMohammed.c",  "AMagboul.c", "telwahab.c", "nalsehemy.c"]]
 excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
-login_id = sup_ids[5].lower().strip()
+# login_id = sup_ids[10].lower().strip()
 # login_id = admin_users[-1].lower().strip()
-# login_id =  "MHamed.c".lower().strip()
+# login_id =  "nalsehemy.c".lower().strip()
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -165,6 +167,89 @@ def load_all_users():
     potential_supervisors = [i.strip() for i in df[~df["CasePortalName"].isin(current_supervisors)]["CasePortalName"].tolist()]
     return potential_supervisors
 
+def convert_to_date(df):
+    dtimeFields = ['Case Date', 'Case Submission Date','Latest Action Date','Transferred to Geospatial','GEO Completion','GEO S Completion','Transferred to Ops', 'Attachment Added Date', "ListDate"]
+    for field in dtimeFields:
+        if field in df.columns:
+            df[field] = pd.to_datetime(df[field]).dt.date
+    return df
+
+def getGeoAction(df):
+    
+    if 'City Name' in df.columns:
+        df['Region'] = ''
+        for regionName, cities in regions_dict.items():
+            df.loc[df["City Name"].isin(cities), 'Region'] = regionName
+    
+    # Ensure required columns exist
+    if not {'Geo Supervisor Recommendation','GEO Recommendation'}.issubset(df.columns):
+        return df
+
+    df['GeoAction'] = ''
+    df['Rejection'] = ''
+
+    for i in range(len(df)):
+        recomm = df.at[i, 'Geo Supervisor Recommendation']
+        recomm2 = df.at[i, 'GEO Recommendation']
+
+        # Normalize empty values
+        if pd.isna(recomm) or recomm == '':
+            recomm = recomm2
+        if pd.isna(recomm) or recomm == '':
+            df.at[i, 'GeoAction'] = 'No Action'
+            continue
+
+        text = str(recomm)
+
+        action_found = False
+
+        # -----------------------------------------------------
+        # 1️⃣ FIRST: check all official actions from geoActions
+        # -----------------------------------------------------
+        for action, keywords in geoActions.items():
+            if any(k in text for k in keywords):
+                df.at[i, 'GeoAction'] = action
+                action_found = True
+
+                # If it is a rejection, also check reasons
+                if action == 'رفض':
+                    for reject, r_words in rejectionReasons.items():
+                        if any(k in text for k in r_words):
+                            df.at[i, 'Rejection'] = reject
+
+                break  # stop scanning actions once matched
+
+        # -----------------------------------------------------
+        # 2️⃣ If no official action found, check “شطفة”
+        # -----------------------------------------------------
+        if not action_found:
+            if any(k in text for k in ['شطفة', 'الشطفة', 'شطفه']):
+                df.at[i, 'GeoAction'] = 'شطفة'
+                continue
+
+        # -----------------------------------------------------
+        # 3️⃣ If still nothing, check “غرفة كهرباء”
+        # -----------------------------------------------------
+        if not action_found:
+            if any(k in text for k in ['كهرب', 'غرف', 'غرفة كهرباء', 'غرفة الكهرباء', 'غرفة', 'الكهرباء']):
+                df.at[i, 'GeoAction'] = 'غرفة كهرباء'
+                continue
+
+        # -----------------------------------------------------
+        # 4️⃣ If still no match → No Action
+        # -----------------------------------------------------
+        if not action_found:
+            df.at[i, 'GeoAction'] = 'No Action'
+
+    return df
+
+# conn=get_connection()
+# regions_df = pd.read_sql("""SELECT * FROM evaluation."Regions" """, conn)
+# regions = regions_df["Region"].unique().tolist()
+# conn.close()
+# regions_dict = {}
+# for _, row in regions_df.iterrows():
+#     re = row[]
 supervisorName = retrive_supervisor(login_id)#.strip()
 print(login_id, supervisorName)
 # admin_users = admin_users + [i for i in get_admins_upadtes() if i not in admin_users]
@@ -174,6 +259,7 @@ supervisors_sql = """SELECT DISTINCT("SupervisorName") FROM evaluation."EditorsL
                     'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team') AND "SupervisorName" IS NOT NULL """
 engine = get_connection()
 current_supervisors = [i for i in pd.read_sql(supervisors_sql, engine)["SupervisorName"].tolist() if i not in excluded_supervisors]
+engine.close()
 # ----------------------------
 # Main Window: Case List
 # ----------------------------
@@ -216,20 +302,7 @@ class MainWindow(QtWidgets.QWidget):
         self.remaining_label = QtWidgets.QLabel(f"{self.getRemainingCount(supervisorName, replacement)}")
         self.remaining_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-right: 10px; color: #824131;")
 
-        # header = QtWidgets.QLabel("GRS - Team Evaluation System")
-        # # self.header.setText(f'<img src="./Logo_icon.ico" width="24" height="24"> GRS - Team Evaluation System')
-        # header.setFont(QFont("Cairo", 16, QFont.Bold))
-        # header.setAlignment(Qt.AlignCenter)
-        # header.setStyleSheet("""
-        #     QLabel {
-        #         background-color: #0A3556;
-        #         color: white;
-        #         padding: 12px;
-        #         border-bottom: 3px solid #005a9e;
-        #     }
-        # """)
         header_layout.addWidget(logo)
-        # header_layout.addStretch()
         header_layout.addWidget(title)
         header_layout.addSpacing(15)
         header_layout.addWidget(self.remaining_label)
@@ -362,9 +435,13 @@ class MainWindow(QtWidgets.QWidget):
         sidebar_layout.addLayout(fil_btn_layout)
         sidebar_layout.addStretch()
 
+        update_btn = QtWidgets.QPushButton("Update Ops Data")
+        update_btn.clicked.connect(lambda: UpdateOpsData(conn).exec_())
+
         admin_btn = QtWidgets.QPushButton("Manage Replacements")
         admin_btn.clicked.connect(lambda: ReplacementManager().exec_())
         if login_id in admin_users:
+            sidebar_layout.addWidget(update_btn)
             sidebar_layout.addWidget(admin_btn)
 
         # ----- Main area -----
@@ -815,7 +892,6 @@ class MainWindow(QtWidgets.QWidget):
         eval_window = EvaluationWindow(self.cases_df, row, self.sup_input.text().strip())
         eval_window.exec_()
 
-
 # ----------------------------
 # Evaluation Window
 # ----------------------------
@@ -1259,6 +1335,129 @@ class ReplacementManager(QtWidgets.QDialog):
         add_replacement(absent, replacement, start, end)
 
         QtWidgets.QMessageBox.information(self, "Success", "Replacement saved!")
+
+class UpdateOpsData(QtWidgets.QDialog):
+    def __init__(self, engine, parent=None):
+        super().__init__(parent)
+        self.engine = engine
+
+        self.setWindowTitle("Update Ops Data")
+        self.setMinimumWidth(400)
+
+        # --- UI Elements ---
+        self.label = QtWidgets.QLabel("Select an Excel file to update OpsData:")
+        self.btn_select = QtWidgets.QPushButton("Select Excel File")
+        self.btn_run = QtWidgets.QPushButton("Run Update")
+        self.status = QtWidgets.QLabel("")
+
+        # Disable Run button until a file is chosen
+        self.btn_run.setEnabled(False)
+
+        # Layout
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.label)
+        layout.addWidget(self.btn_select)
+        layout.addWidget(self.btn_run)
+        layout.addWidget(self.status)
+        self.setLayout(layout)
+
+        # Connect signals
+        self.btn_select.clicked.connect(self.select_excel)
+        self.btn_run.clicked.connect(self.run_update)
+
+        # Stored path
+        self.file_path = None
+
+
+    def select_excel(self):
+        """Open file dialog and return selected Excel file."""
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "Select Excel File",
+            "",
+            "Excel Files (*.xlsx *.xls)"
+        )
+        return file_path if file_path else None
+
+    def load_excel_df(self, file_path):
+        """Load Excel into DataFrame."""
+        try:
+            wb = openpyxl.load_workbook(file_path, read_only=True)
+            ws = wb['Sheet1']
+            header_row_idx = None
+            for i, row in enumerate(ws.iter_rows(max_col=2, max_row=10, values_only=True)):
+                if row and 'Case Number' in row:
+                    header_row_idx = i
+                    break
+            wb.close()
+            if header_row_idx is not None:
+                df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=header_row_idx)
+                return df
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to read Excel file:\n{e}")
+            return None
+
+    def load_editorsList(self):
+        """Load userlist table from DB."""
+        try:
+            engine = create_engine("postgresql://app_user:app1234@10.150.40.74:5432/GSA")
+            return pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to load userlist:\n{e}")
+            return None
+
+    def join_editors_list(self, ops_df, editorsList, join_key):
+        """Join Excel data with userlist on a given key."""
+        try:
+            conn = get_connection()
+            regions = pd.read_sql("""SELECT * FROM evaluation."EditorsList" """, conn)
+            ops_df = getGeoAction(ops_df)
+            ops_df['GEO S Completion'] = pd.to_datetime(ops_df['GEO S Completion']).dt.normalize()
+            editorsList = editorsList.rename({'CaseProtalName': 'Geo Supervisor'},axis=1)
+            editorsList["ListDate"] = pd.to_datetime(editorsList["ListDate"]).dt.normalize()
+            ops_df = ops_df.sort_values(by=["GEO S Completion", "Geo Supervisor"])
+            editorsList = editorsList.sort_values(by=["ListDate", "Geo Supervisor"])
+            ops_df = pd.merge_asof(ops_df, editorsList, by="Geo Supervisor", left_on="GEO S Completion", 
+                                    right_on="ListDate", direction='backward')
+            ops_df['GEO S Completion'] = [pd.to_datetime(i).date() for i in ops_df['GEO S Completion']]
+            ops_df['ListDate'] = [pd.to_datetime(i).date() for i in ops_df['ListDate']]
+            return ops_df
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to join data:\n{e}")
+            return None
+
+    def replace_opsdata(self, ops_df):
+        """Replace OpsData table in the DB."""
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(text("""DELETE FROM evaluation."OpsData" """))
+                # Pandas creates table and inserts
+                ops_df.to_sql("OpsData", self.engine, schema='evaluation', if_exists='append', index=False)
+
+            QtWidgets.QMessageBox.information(self.parent, "Success", "OpsData table updated successfully!")
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to update OpsData:\n{e}")
+
+    def run_update(self, join_key):
+        """Main workflow to update OpsData."""
+        file_path = self.select_excel()
+        if not file_path:
+            return
+
+        ops_data = self.load_excel_df(file_path)
+        if ops_data is None:
+            return
+
+        df_editorList = self.load_editorsList()
+        if df_editorList is None:
+            return
+
+        df_joined = self.join_editors_list(ops_data, df_editorList, join_key)
+        if df_joined is None:
+            return
+
+        self.replace_opsdata(df_joined)
 
 
 
