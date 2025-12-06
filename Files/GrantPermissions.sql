@@ -16,15 +16,18 @@
 -- 	"EndDate" DATE NOT NULL
 -- )
 
-GRANT USAGE, SELECT ON SEQUENCE evaluation."EvaluationTable_EvaluationID_seq" TO "evalApp";
-GRANT UPDATE ON SEQUENCE evaluation."EvaluationTable_EvaluationID_seq" TO "evalApp";
+-- GRANT USAGE, SELECT ON SEQUENCE evaluation."EvaluationTable_EvaluationID_seq" TO "evalApp";
+-- GRANT UPDATE ON SEQUENCE evaluation."EvaluationTable_EvaluationID_seq" TO "evalApp";
+
+GRANT USAGE, SELECT ON SEQUENCE evaluation."SupervisorReplacements_ID_seq" TO "evalApp";
+GRANT UPDATE ON SEQUENCE evaluation."SupervisorReplacements_ID_seq" TO "evalApp";
 
 -- SELECT * FROM information_schema.tables 
 -- WHERE table_schema = 'evaluation' AND table_name = 'CaseAssignment';
 
 -- Check If the sequence exists
 -- SELECT * FROM information_schema.sequences 
--- WHERE sequence_schema = 'evaluation' AND sequence_name = 'EvaluationTable_EvaluationID_seq';
+-- WHERE sequence_schema = 'evaluation' AND sequence_name = 'SupervisorReplacements_ID_seq';
 
 -- SELECT column_name, column_default
 -- FROM information_schema.columns

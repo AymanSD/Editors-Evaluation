@@ -15,12 +15,12 @@ from datetime import date, datetime, timedelta
 # Database connection settings
 # ----------------------------
 DB_SETTINGS = {
-    # "dbname": "GSA",
-    "dbname": "GRS",
+    "dbname": "GSA",
+    # "dbname": "GRS",
     "user": "evalApp",
     "password": "app1234",
-    "host": "10.150.40.74",
-    # "host":"127.0.0.1",
+    # "host": "10.150.40.74",
+    "host":"127.0.0.1",
     "port": "5432"
 }
 
@@ -40,13 +40,13 @@ last_week = (datetime.today() - timedelta(days=7)).date()
 yesterday = (datetime.today() - timedelta(days=1)).date( )
 
 # supervisorName = "Raseel alharthi"
-login_id= os.getlogin().lower().strip()
+# login_id= os.getlogin().lower().strip()
 admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c", "aalhares.c", "LMohammed.c",  "AMagboul.c", "telwahab.c", "nalsehemy.c"]]
 excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 # login_id = sup_ids[10].lower().strip()
-# login_id = admin_users[-1].lower().strip()
-# login_id =  "nalsehemy.c".lower().strip()
+# login_id = admin_users[0].lower().strip()
+login_id =  "AAlhegbani.c".lower().strip()
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -142,8 +142,9 @@ def add_replacement(absent, replacement, start, end):
         INSERT INTO evaluation."SupervisorReplacements"
         ("AbsentSupervisor", "AbsentSupervisorID", "ReplacementSupervisor", "ReplacementSupervisorID", "StartDate", "EndDate")
         VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT ("AbsentSupervisor", "StartDate")
+        ON CONFLICT ("AbsentSupervisorID", "StartDate", "EndDate")
         DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
+                      "ReplacementSupervisorID" = EXCLUDED."ReplacementSupervisorID", 
                       "EndDate" = EXCLUDED."EndDate";
     """
 
@@ -181,6 +182,17 @@ def getGeoAction(df):
         for regionName, cities in regions_dict.items():
             df.loc[df["City Name"].isin(cities), 'Region'] = regionName
     
+    geoActions = {'البيانات الجيومكانية صحيحة':['الجيومكانية صحيحة', 'الجيومكانية صحيحه', 'الجيومكانيه صحيحه', 'جيومكانية صحيحة'],'تعديل بيانات وصفية':['بيانات وصفية', 'بيانات وصفيه', 'البيانات الوصفية', 'البيانات الوصفيه'], 'تعديل أبعاد الأرض':['أبعاد', 'ابعاد', 'تعديل أبعاد', 'تعديل ابعاد', 'تعديل الأبعاد', 'تعديل الابعاد'], 
+                'تجزئة':['تجزئة','التجزئة'], 'دمج':['دمج', 'الدمج'], 'رفض':["يعاد", 'رفض', 'نقص','مرفوض',"مستندات", "ارفاق", "إرفاق", "غير صحيحة", "الارض المختارة غير صحيحة"]}
+
+    rejectionReasons = {'محضر الدمج/التجزئة':['محضر', 'المحضر', 'المحضر المطلوب', 'محضر اللجنة الفنية'], 
+                        'إزدواجية صكوك': ['ازدواجية صكوك', 'إزدواجية صكوك', 'ازدواجيه', 'إزدواجيه صكوك'],
+                        "خطأ في بيانات الصك'":['خطأ في بيانات الصك', 'خطأ في الصك'],
+                        'صك الأرض':['صك الأرض', 'صك الارض', 'صك', 'الصك'], 
+                        "إرفاق المؤشرات":["مؤشرات", "إرفاق كافه المؤشرات", "ارفاق كافة المؤشرات","ارفاق كافه المؤشرات"],
+                        'طلب لوحدة عقارية':['طلب لوحدة عقارية', 'وحدة', 'وحده', 'وحده عقارية', 'وحدة عقاريه', 'عقارية'], 
+                        'طلب مسجل مسبقاً':['سابق', 'مسبقا', 'مسبقاً', 'مسبق', 'طلب آخر', 'مكرر', 'طلب تسجيل اول مكرر'], 'إختيار خاطئ': ['اختيار خاطئ','المختارة غير صحيحة','إختيار خاطئ','المختارة غير صحيحه'],
+                        "المخطط المعتمد":["المخطط", "مخطط"]}
     # Ensure required columns exist
     if not {'Geo Supervisor Recommendation','GEO Recommendation'}.issubset(df.columns):
         return df
@@ -243,13 +255,13 @@ def getGeoAction(df):
 
     return df
 
-# conn=get_connection()
-# regions_df = pd.read_sql("""SELECT * FROM evaluation."Regions" """, conn)
-# regions = regions_df["Region"].unique().tolist()
-# conn.close()
-# regions_dict = {}
-# for _, row in regions_df.iterrows():
-#     re = row[]
+conn=get_connection()
+regions_df = pd.read_sql("""SELECT * FROM evaluation."Regions" """, conn)
+regions = regions_df["Region"].unique().tolist()
+conn.close()
+regions_dict = {}
+for re in regions:
+    regions_dict[re] = regions_df[regions_df['Region']==re]["CityName"].tolist()
 supervisorName = retrive_supervisor(login_id)#.strip()
 print(login_id, supervisorName)
 # admin_users = admin_users + [i for i in get_admins_upadtes() if i not in admin_users]
@@ -267,18 +279,21 @@ class MainWindow(QtWidgets.QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GRS Evaluation System V1.0")
+        self.setWindowTitle("GRS Evaluation System V1.1")
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.resize(1000, 720)
 
-        # 🌈 Apply light theme
-        palette = QPalette()
-        palette.setColor(QPalette.Window, QColor("#bdbdbd"))
-        palette.setColor(QPalette.Base, QColor("#ffffff"))
-        palette.setColor(QPalette.AlternateBase, QColor("#f3f3f3"))
-        palette.setColor(QPalette.Button, QColor("#0A3556"))
-        palette.setColor(QPalette.ButtonText, QColor("#ffffff"))
-        self.setPalette(palette)
+        self.is_dark = False
+        
+
+        # # 🌈 Apply light theme
+        # palette = QPalette()
+        # palette.setColor(QPalette.Window, QColor("#000000"))
+        # palette.setColor(QPalette.Base, QColor("#1d1d1d"))
+        # palette.setColor(QPalette.AlternateBase, QColor("#f3f3f3"))
+        # palette.setColor(QPalette.Button, QColor("#0A3556"))
+        # palette.setColor(QPalette.ButtonText, QColor("#ffffff"))
+        # self.setPalette(palette)
 
         self.setFont(QFont("Cairo", 10))
         
@@ -291,21 +306,45 @@ class MainWindow(QtWidgets.QWidget):
         # icon = QPixmap(logo).scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio)
         # ----- Header Title -----
         header = QtWidgets.QWidget()
+            # header.setStyleSheet("background-color: #E6EDF4")
         header_layout = QtWidgets.QHBoxLayout(header)
         logo = QtWidgets.QLabel()
         pixmap = QPixmap("logo.png").scaled(110, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         logo.setPixmap(pixmap)
 
         title = QtWidgets.QLabel("Team Evaluation System")
-        title.setStyleSheet("font-size: 24px; font-weight: bold; margin-left: 10px; color: #0A3556;")
+        if self.is_dark==True:
+            title.setStyleSheet("font-size: 26px; font-weight: 700; margin-left: 10px; color: #0A3556;")
+        else:
+            title.setStyleSheet("font-size: 26px; font-weight: 700; margin-left: 10px; color: #ffffff;")
         
-        self.remaining_label = QtWidgets.QLabel(f"{self.getRemainingCount(supervisorName, replacement)}")
-        self.remaining_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-right: 10px; color: #824131;")
+        rem, eval = self.getRemainingCount(supervisorName, replacement)
+        self.remaining_label = QtWidgets.QLabel(f"Evaluated: {eval}   •   Remaining: {rem}")
+        self.remaining_label.setStyleSheet("font-size: 16px; font-weight: bold; padding-right: 10px; color: #824131;")
+        # Theme toggle button (sun/moon)
+        self.theme_btn = QtWidgets.QPushButton("🌙")
+        self.theme_btn.setFixedSize(36, 36)
+        self.theme_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                font-size: 18px;
+                border: none;
+            }
+            QPushButton:hover {
+                color: #367580;
+            }
+        """)
+        self.theme_btn.clicked.connect(self.toggle_theme)
 
+        self.apply_light_theme()
+        
         header_layout.addWidget(logo)
+        header_layout.addStretch()
         header_layout.addWidget(title)
-        header_layout.addSpacing(15)
+        # header_layout.addSpacing(15)
+        header_layout.addStretch()
         header_layout.addWidget(self.remaining_label)
+        header_layout.addWidget(self.theme_btn)
         # main_layout.addWidget(icon)
         main_layout.addWidget(header)
 
@@ -331,7 +370,7 @@ class MainWindow(QtWidgets.QWidget):
 
         title = QtWidgets.QLabel("🧺 Filter Cases")
         title.setFont(QFont("Cairo", 13))
-        title.setStyleSheet("color: #0A3556;")
+        # title.setStyleSheet("color: #0A3556;")
         sidebar_layout.addWidget(title)
 
         # Supervisor
@@ -379,7 +418,11 @@ class MainWindow(QtWidgets.QWidget):
         self.editor_drop.addItem("")
         # query = f"""SELECT "EditorName", "Region", "GeoAction" FROM evaluation."CaseAssignment" """
         if login_id not in admin_users:
-            query += f"""WHERE "AssignedSupervisor" = '{supervisorName}' """
+            if replacement:
+                current_sup = replacement
+            else:
+                current_sup = supervisorName
+            query += f"""WHERE "AssignedSupervisor" = '{current_sup}' """
         conn = get_connection()
         self.editor_drop.addItems(pd.read_sql(query, conn)['EditorName'].unique().tolist())
         sidebar_layout.addWidget(self.editor_drop)
@@ -446,8 +489,10 @@ class MainWindow(QtWidgets.QWidget):
 
         # ----- Main area -----
         main_area = QtWidgets.QWidget()
+        # main_area.setStyleSheet("background-color: #1d1d1d")
         main_vlayout = QtWidgets.QVBoxLayout(main_area)
-        main_vlayout.setContentsMargins(10, 10, 10, 10)
+        main_vlayout.setContentsMargins(10, 0, 10, 0)
+        # main_vlayout.setStyleSheet("background-color: #1d1d1d")
 
         self.table = QtWidgets.QTableWidget()
         self.table.setSelectionBehavior(QtWidgets.QTableWidget.SelectRows)
@@ -483,6 +528,125 @@ class MainWindow(QtWidgets.QWidget):
         self.cases_df = pd.DataFrame()
 
     # --------------------------
+    # Light/Dark Themes
+    # --------------------------
+    def apply_light_theme(self):
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor("#F4F4F4"))
+        palette.setColor(QPalette.Base, QColor("#FFFFFF"))
+        palette.setColor(QPalette.AlternateBase, QColor("#F1F1F1"))
+        palette.setColor(QPalette.Button, QColor("#0A3556"))
+        palette.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
+        palette.setColor(QPalette.Text, QColor("#000000"))
+        palette.setColor(QPalette.WindowText, QColor("#0A3556"))
+        self.setPalette(palette)
+
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #F4F4F4;
+                color: #000000;
+            }
+
+            QFrame {
+                background-color: #E6EDF4;
+                border: 1px solid #CCCCCC;
+                padding: 2px;
+                border-radius: 6px;
+            }
+
+            QLineEdit, QComboBox, QDateEdit {
+                background-color: white;
+                color: #000;
+                border: 1px solid #BFBFBF;
+                padding: 4px;
+            }
+
+            QPushButton {
+                background-color: #0A3556;
+                color: white;
+                border-radius: 6px;
+            }
+
+            QTableWidget {
+                background-color: #ffffff;
+                alternate-background-color: #f3f3f3;
+            }
+
+            QHeaderView::section {
+                background-color: #0A3556;
+                color: white;
+                font-weight: bold;
+                padding: 4px;
+            }
+        """)
+
+        self.theme_btn.setText("🌙")  # dark mode icon
+
+    def apply_dark_theme(self):
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor("#121212"))
+        palette.setColor(QPalette.Base, QColor("#1E1E1E"))
+        palette.setColor(QPalette.AlternateBase, QColor("#2A2A2A"))
+        palette.setColor(QPalette.Button, QColor("#3A6EA5"))
+        palette.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
+        palette.setColor(QPalette.Text, QColor("#DDDDDD"))
+        palette.setColor(QPalette.WindowText, QColor("#FFFFFF"))
+        self.setPalette(palette)
+        "#717070"
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #121212;
+                color: #E0E0E0;
+            }
+
+            QFrame {
+                background-color: #1E1E1E;
+                border: 1px solid #333;
+                padding: 2px
+                border-radius: 6px;
+            }
+
+            QLineEdit, QComboBox, QDateEdit {
+                background-color: #717070;
+                color: #E0E0E0;
+                border: 1px solid #444;
+                padding: 6px;
+            }
+
+            QPushButton {
+                background-color: #3A6EA5;
+                color: white;
+                border-radius: 6px;
+            }
+
+            QPushButton:hover {
+                background-color: #4D8BC7;
+            }
+
+            QTableWidget {
+                background-color: #1E1E1E;
+                alternate-background-color: #2A2A2A;
+                color: #E0E0E0;
+            }
+
+            QHeaderView::section {
+                background-color: #3A6EA5;
+                color: white;
+                font-weight: bold;
+                padding: 4px;
+            }
+        """)
+
+        self.theme_btn.setText("☀️")  # light mode icon
+
+    def toggle_theme(self):
+        if self.is_dark:
+            self.apply_light_theme()
+        else:
+            self.apply_dark_theme()
+        self.is_dark = not self.is_dark
+
+    # --------------------------
     # Get Remaining Cases Count
     # --------------------------
     def getRemainingCount(self, supervisor_name, replacement_name):
@@ -491,16 +655,27 @@ class MainWindow(QtWidgets.QWidget):
         remaining_query = """
             SELECT COUNT(*) FROM evaluation."CaseAssignment"
             WHERE "IsEvaluated" = FALSE
+            AND "IsRetired" = FALSE
+        """
+        evaluated_query = """
+            SELECT COUNT(*) FROM evaluation."EvaluationTable"
+            WHERE "EvaluationDate"::date = CURRENT_DATE
         """
         if login_id in admin_users:
             pass
         else:
             if replacement_name:
-                # print(replacement_name)
-                supervisorName = replacement_name
+                current_supervisor = replacement_name
+            else:
+                current_supervisor = supervisor_name
+
+                # supervisorName = replacement_name
             remaining_query += """AND "AssignedSupervisor" = %s """
+            evaluated_query += """AND "EvaluatedBy" = %s """
             # print("=>>> Current Supervisor:", str(supervisorName))
-        return str(pd.read_sql(remaining_query, conn, params=[supervisorName]).iloc[0,0])
+        remainging = str(pd.read_sql(remaining_query, conn, params=[current_supervisor]).iloc[0,0])
+        evaluated = str(pd.read_sql(evaluated_query, conn, params=[supervisorName]).iloc[0,0])
+        return remainging, evaluated
     
     # def replace_existingCases(self):
     #     query = """SELECT *
@@ -616,7 +791,7 @@ class MainWindow(QtWidgets.QWidget):
             day_back = 1
             found_cases = False
             # engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
-            engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
+            engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
             conn = get_connection()
             active_editors = pd.read_sql("""SELECT DISTINCT("CasePortalName") FROM evaluation."EditorsList" 
                                         WHERE "CasePortalName" IS NOT NULL
@@ -822,6 +997,18 @@ class MainWindow(QtWidgets.QWidget):
             return
 
         conn = get_connection()
+        check_updates = """SELECT * FROM evaluation."OpsData" 
+            WHERE "UploadDate"=CURRENT_DATE 
+            LIMIT 1"""
+        updateOps = pd.read_sql(check_updates, conn)
+        if updateOps.empty:
+            if login_id in admin_users:
+                message = "Database is not up to date."
+            else:
+                message = "Database is not up to date. Please notify the Admin."
+            QtWidgets.QMessageBox.warning(self, "Error", message)
+            return
+
 
         # Check if assignments exist
         check_sql = """
@@ -875,7 +1062,8 @@ class MainWindow(QtWidgets.QWidget):
                         item.setBackground(QColor("#c2f0c2"))  # Light green
 
                 self.table.setItem(r, c, item)
-        self.remaining_label.setText(str(self.getRemainingCount(supervisor, replacement_supervisor)))
+        rem, eval = self.getRemainingCount(supervisor, replacement_supervisor)
+        self.remaining_label.setText(f"Evaluated: {eval}/Remaining: {rem}")
 
     def reset_filters(self):
         """Reset all filters to default state."""
@@ -1339,15 +1527,16 @@ class ReplacementManager(QtWidgets.QDialog):
 class UpdateOpsData(QtWidgets.QDialog):
     def __init__(self, engine, parent=None):
         super().__init__(parent)
-        self.engine = engine
+        self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@localhost:5432/GSA")
 
         self.setWindowTitle("Update Ops Data")
         self.setMinimumWidth(400)
+        self.setWindowIcon(QIcon(APP_ICON_PATH))
 
         # --- UI Elements ---
         self.label = QtWidgets.QLabel("Select an Excel file to update OpsData:")
-        self.btn_select = QtWidgets.QPushButton("Select Excel File")
-        self.btn_run = QtWidgets.QPushButton("Run Update")
+        self.btn_select = QtWidgets.QPushButton("Browse")
+        self.btn_run = QtWidgets.QPushButton("Update OP Data")
         self.status = QtWidgets.QLabel("")
 
         # Disable Run button until a file is chosen
@@ -1363,10 +1552,12 @@ class UpdateOpsData(QtWidgets.QDialog):
 
         # Connect signals
         self.btn_select.clicked.connect(self.select_excel)
+        # self.btn_run.clicked.connect(lambda: self.run_update
         self.btn_run.clicked.connect(self.run_update)
 
-        # Stored path
-        self.file_path = None
+    def update_status(self, msg):
+        self.status.setText(msg)
+        QtWidgets.QApplication.processEvents()
 
 
     def select_excel(self):
@@ -1377,7 +1568,12 @@ class UpdateOpsData(QtWidgets.QDialog):
             "",
             "Excel Files (*.xlsx *.xls)"
         )
-        return file_path if file_path else None
+        if file_path:
+            self.file_path = file_path
+            self.btn_run.setEnabled(True)
+            return file_path
+        else:    
+            return None
 
     def load_excel_df(self, file_path):
         """Load Excel into DataFrame."""
@@ -1392,6 +1588,12 @@ class UpdateOpsData(QtWidgets.QDialog):
             wb.close()
             if header_row_idx is not None:
                 df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=header_row_idx)
+                df["UniqueKey"] = [str(i) + '_' + str(pd.to_datetime(j).round('s'))  for i, j in zip(df["Case Number"].values, df["GEO S Completion"].values)]
+                df["UploadDate"] = datetime.now().date()
+                df["UploadedBy"] = os.getlogin()
+                df = convert_to_date(df)
+                df = getGeoAction(df) 
+                print("Excel file was loaded successfully")
                 return df
         except Exception as e:
             QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to read Excel file:\n{e}")
@@ -1399,65 +1601,84 @@ class UpdateOpsData(QtWidgets.QDialog):
 
     def load_editorsList(self):
         """Load userlist table from DB."""
+        print("Loading Editors' List")
         try:
-            engine = create_engine("postgresql://app_user:app1234@10.150.40.74:5432/GSA")
-            return pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine)
+            # engine = create_engine("postgresql://app_user:app1234@10.150.40.74:5432/GSA")
+            engine2 = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
+            editors_list = pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine2)
+            editors_list = convert_to_date(editors_list)
+            print("Successfully Loaded Editors' List ✅")
+            return editors_list
         except Exception as e:
             QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to load userlist:\n{e}")
             return None
 
-    def join_editors_list(self, ops_df, editorsList, join_key):
+    def join_editors_list(self, ops_df, editorsList):
         """Join Excel data with userlist on a given key."""
+        print("🔁Joining Editors' List")
+        print(editorsList.columns)
         try:
-            conn = get_connection()
-            regions = pd.read_sql("""SELECT * FROM evaluation."EditorsList" """, conn)
-            ops_df = getGeoAction(ops_df)
             ops_df['GEO S Completion'] = pd.to_datetime(ops_df['GEO S Completion']).dt.normalize()
-            editorsList = editorsList.rename({'CaseProtalName': 'Geo Supervisor'},axis=1)
+            editorsList = editorsList.rename({'CasePortalName': 'Geo Supervisor'},axis=1)
             editorsList["ListDate"] = pd.to_datetime(editorsList["ListDate"]).dt.normalize()
+            print("✅ Date Normalization!")
             ops_df = ops_df.sort_values(by=["GEO S Completion", "Geo Supervisor"])
             editorsList = editorsList.sort_values(by=["ListDate", "Geo Supervisor"])
+            print("✅ Sorted Dataframes")
             ops_df = pd.merge_asof(ops_df, editorsList, by="Geo Supervisor", left_on="GEO S Completion", 
                                     right_on="ListDate", direction='backward')
+            print("✅ Merged")
             ops_df['GEO S Completion'] = [pd.to_datetime(i).date() for i in ops_df['GEO S Completion']]
+            print("✅ GEO S Completion Converted")
+            print(ops_df.columns[-10:])
             ops_df['ListDate'] = [pd.to_datetime(i).date() for i in ops_df['ListDate']]
+            print("✅ Ops Data was joined successfully")
             return ops_df
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to join data:\n{e}")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to join data:\n{e}")
             return None
 
     def replace_opsdata(self, ops_df):
         """Replace OpsData table in the DB."""
         try:
             with self.engine.begin() as conn:
-                conn.execute(text("""DELETE FROM evaluation."OpsData" """))
-                # Pandas creates table and inserts
-                ops_df.to_sql("OpsData", self.engine, schema='evaluation', if_exists='append', index=False)
-
-            QtWidgets.QMessageBox.information(self.parent, "Success", "OpsData table updated successfully!")
+            # cur = conn.cursor()
+                conn.execute(text("""TRUNCATE evaluation."OpsData" RESTART IDENTITY"""))
+            print("✅ Cleared Op Data")
+            # Pandas table and inserts
+            ops_df.to_sql("OpsData", self.engine, schema='evaluation', if_exists='append', index=False)#, method="multi", chunksize=5000)
+            # print("✅ Loaded New Op Data")
+            self.update_status("⬆️ Updating database...")
+            # conn.commit()
+            QtWidgets.QMessageBox.information(self, "Success", "Ops Data updated successfully!")
 
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to update OpsData:\n{e}")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to update OpsData:\n{e}")
 
-    def run_update(self, join_key):
+    def run_update(self):
         """Main workflow to update OpsData."""
-        file_path = self.select_excel()
+        file_path = self.file_path
         if not file_path:
+            QtWidgets.QMessageBox.warning(self, "Error", "Please select an Excel file.")
             return
 
+        self.update_status("📄 Loading Excel file...")
         ops_data = self.load_excel_df(file_path)
         if ops_data is None:
             return
 
+        self.update_status("👥 Loading Editors List...")
         df_editorList = self.load_editorsList()
         if df_editorList is None:
             return
 
-        df_joined = self.join_editors_list(ops_data, df_editorList, join_key)
+        self.update_status("🔗 Joining editors list...")
+        df_joined = self.join_editors_list(ops_data, df_editorList)
         if df_joined is None:
             return
-
+        self.update_status("⬆️ Updating database...")
         self.replace_opsdata(df_joined)
+        
 
 
 
