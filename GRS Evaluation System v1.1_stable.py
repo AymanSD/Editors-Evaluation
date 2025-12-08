@@ -3,7 +3,7 @@ import os
 import psycopg2
 import random
 import openpyxl
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore 
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QPixmap
 from PyQt5.QtCore import Qt
@@ -24,69 +24,6 @@ DB_SETTINGS = {
     "port": "5432"
 }
 
-LIGHT_THEME = """
-    QWidget {
-        background-color: #ffffff;
-        color: #000000;
-    }
-
-    QLineEdit, QComboBox, QTextEdit, QTableWidget, QTableView {
-        background-color: #ffffff;
-        color: #000000;
-        selection-background-color: #0078d7;
-        selection-color: white;
-    }
-
-    QHeaderView::section {
-        background-color: #e6e6e6;
-        color: #000000;
-    }
-
-    QPushButton {
-        background-color: #f0f0f0;
-        color: #000000;
-    }
-
-    QPushButton:hover {
-        background-color: #e0e0e0;
-    }
-
-    QPushButton:pressed {
-        background-color: #d0d0d0;
-    }
-    """
-
-DARK_THEME = """
-    QWidget {
-        background-color: #1e1e1e;
-        color: #f0f0f0;
-    }
-
-    QLineEdit, QComboBox, QTextEdit, QTableWidget, QTableView {
-        background-color: #2b2b2b;
-        color: #ffffff;
-        selection-background-color: #409eff;
-        selection-color: #000000;
-    }
-
-    QHeaderView::section {
-        background-color: #3c3c3c;
-        color: #ffffff;
-    }
-
-    QPushButton {
-        background-color: #3a3a3a;
-        color: #ffffff;
-    }
-
-    QPushButton:hover {
-        background-color: #505050;
-    }
-
-    QPushButton:pressed {
-        background-color: #606060;
-    }
-    """
 
 parent_directory = os.curdir
 # print(parent_directory)
@@ -321,30 +258,6 @@ def getGeoAction(df):
 
     return df
 
-def apply_theme_to_widgets(widget):
-        """
-        Apply text color override for widgets that don't fully respect QPalette.
-        """
-        if ThemeManager.is_dark:
-            fg = "#e6e6e6"
-            bg = "#3c3c3c"
-        else:
-            fg = "#000000"
-            bg = "#ffffff"
-
-        # Minimal stylesheet just for text
-        widget.setStyleSheet(f"""
-            QLineEdit, QComboBox, QTextEdit, QTableWidget {{
-                color: {fg};
-                background-color: {bg};
-            }}
-        """)
-
-        # # Recursively apply to child widgets
-        for child in widget.findChildren(QtWidgets.QWidget):
-            apply_theme_to_widgets(child)
-
-
 conn=get_connection()
 regions_df = pd.read_sql("""SELECT * FROM evaluation."Regions" """, conn)
 regions = regions_df["Region"].unique().tolist()
@@ -373,10 +286,7 @@ class MainWindow(QtWidgets.QWidget):
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.resize(1000, 720)
 
-        self.dark_mode_enabled = False    # or load from settings
-
-        ThemeManager.set_theme(self.dark_mode_enabled)
-        # ThemeManager.apply_theme(self)    # ⬅ APPLY THEME TO MAIN WINDOW
+        self.is_dark = False
         
 
         # # 🌈 Apply light theme
@@ -427,8 +337,7 @@ class MainWindow(QtWidgets.QWidget):
                 color: #ffffff;
             }
         """)
-        # self.theme_btn.clicked.connect(self.toggle_theme)
-        self.theme_btn.clicked.connect(ThemeManager.toggle_theme)
+        self.theme_btn.clicked.connect(self.toggle_theme)
 
         # self.apply_light_theme()
         
@@ -766,17 +675,13 @@ class MainWindow(QtWidgets.QWidget):
     #         self.apply_dark_theme()
     #     self.is_dark = not self.is_dark
 
-    # def toggle_theme(self):
-    #     if ThemeManager.current_theme == "light":
-    #         ThemeManager.current_theme = "dark"
-    #     else:
-    #         ThemeManager.current_theme = "light"
+    def toggle_theme(self):
+        if ThemeManager.current_theme == "light":
+            ThemeManager.current_theme = "dark"
+        else:
+            ThemeManager.current_theme = "light"
 
-    #     ThemeManager.apply_theme(self)
-    # def toggle_theme(self, dark_mode_enabled):
-    #     ThemeManager.set_theme(dark_mode_enabled)
-    #     ThemeManager.apply_theme(self)        # apply theme to Main Window
-
+        ThemeManager.apply_theme(self)
 
     # --------------------------
     # Get Remaining Cases Count
@@ -1213,7 +1118,6 @@ class MainWindow(QtWidgets.QWidget):
         if self.cases_df.empty:
             return
         eval_window = EvaluationWindow(self.cases_df, row, self.sup_input.text().strip())
-        ThemeManager.apply_theme(eval_window)
         eval_window.exec_()
 
 # ----------------------------
@@ -1436,7 +1340,6 @@ class EvaluationWindow(QtWidgets.QDialog):
         btn_layout.addWidget(self.submit_btn)
 
         main_layout.addLayout(btn_layout)
-
 
     # --- Navigation Functions ---
     def prev_case(self):
@@ -1704,7 +1607,7 @@ class UpdateOpsData(QtWidgets.QDialog):
         self.btn_run.clicked.connect(self.run_update)
 
         # ⭐ APPLY THE THEME
-        # ThemeManager.apply_theme(self)
+        ThemeManager.apply_theme(self)
 
     def update_status(self, msg):
         self.status.setText(msg)
@@ -1834,49 +1737,47 @@ class UpdateOpsData(QtWidgets.QDialog):
 # THEME Manager
 # ------------------
 class ThemeManager:
-    is_dark = False
+    current_theme = "light"
 
-    @staticmethod
-    def set_theme(is_dark: bool):
-        ThemeManager.is_dark = is_dark
-        ThemeManager.apply_theme()
+    themes = {
+        "light": {
+            "window_bg": "#ffffff",
+            "text_color": "#000000",
+            "title_color": "#0A3556",
+        },
+        "dark": {
+            "window_bg": "#2b2b2b",
+            "text_color": "#f0f0f0",
+            "title_color": "#ffffff",
+        }
+    }
+    @classmethod
+    def apply_theme(cls, widget):
+        theme = cls.themes[cls.current_theme]
 
-    @staticmethod
-    def toggle_theme():
-        # Flip the current theme
-        ThemeManager.is_dark = not ThemeManager.is_dark
-        # Apply the new theme to the app
-        ThemeManager.apply_theme()
+        widget.setStyleSheet(f"""
+            QWidget {{
+                background-color: {theme['window_bg']};
+                color: {theme['text_color']};
+                
+            }}""")
 
-    @staticmethod
-    def apply_theme():
-        if ThemeManager.is_dark:
-            bg = QtGui.QColor(45, 45, 45)
-            fg = QtGui.QColor(240, 240, 240)
-            base = QtGui.QColor(60, 60, 60)
-        else:
-            bg = QtGui.QColor(240, 240, 240)
-            fg = QtGui.QColor(0, 0, 0)
-            base = QtGui.QColor(255, 255, 255)
+        #     QLabel#TitleLabel {{
+        #         font-size: 12pt;
+        #         font-weight: bold;
+        #         color: {theme['title_color']};
+        #     }}
 
-        palette = QtGui.QPalette()
-        palette.setColor(QtGui.QPalette.Window, bg)
-        palette.setColor(QtGui.QPalette.WindowText, fg)
-        palette.setColor(QtGui.QPalette.Base, base)
-        palette.setColor(QtGui.QPalette.AlternateBase, bg)
-        palette.setColor(QtGui.QPalette.Text, fg)
-        palette.setColor(QtGui.QPalette.Button, bg)
-        palette.setColor(QtGui.QPalette.ButtonText, fg)
-        palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(53, 132, 228))
-        palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
+        #     QPushButton {{
+        #         padding: 6px;
+        #         border-radius: 6px;
+        #     }}
 
-        QtWidgets.QApplication.setPalette(palette)
-        
-            # Explicitly fix QComboBox text color if it ignores palette
-    for w in QtWidgets.QApplication.allWidgets():
-        if isinstance(w, QtWidgets.QComboBox):
-            w.setStyle(QtWidgets.QStyleFactory.create("Windows"))  # or leave default style
-
+        #     QLineEdit, QComboBox, QTableWidget {{
+        #         background-color: #585858;
+        #         color: black;
+        #     }}
+        # """)
 
 
 
@@ -1898,12 +1799,6 @@ if __name__ == "__main__":
     if not is_allowed_user(login_id) and not replacement:
         QtWidgets.QMessageBox.critical(None, "Access Denied", "You do not have permission to use this application.")
         sys.exit(1)
-
-    # Load saved theme
-    # dark = load_theme_setting()
-    ThemeManager.set_theme(True)
-    ThemeManager.toggle_theme()
-    # ThemeManager.apply_theme(app)
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
