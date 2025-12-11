@@ -24,92 +24,25 @@ DB_SETTINGS = {
     "port": "5432"
 }
 
-LIGHT_THEME = """
-    QWidget {
-        background-color: #ffffff;
-        color: #000000;
-    }
-
-    QLineEdit, QComboBox, QTextEdit, QTableWidget, QTableView {
-        background-color: #ffffff;
-        color: #000000;
-        selection-background-color: #0078d7;
-        selection-color: white;
-    }
-
-    QHeaderView::section {
-        background-color: #e6e6e6;
-        color: #000000;
-    }
-
-    QPushButton {
-        background-color: #f0f0f0;
-        color: #000000;
-    }
-
-    QPushButton:hover {
-        background-color: #e0e0e0;
-    }
-
-    QPushButton:pressed {
-        background-color: #d0d0d0;
-    }
-    """
-
-DARK_THEME = """
-    QWidget {
-        background-color: #1e1e1e;
-        color: #f0f0f0;
-    }
-
-    QLineEdit, QComboBox, QTextEdit, QTableWidget, QTableView {
-        background-color: #2b2b2b;
-        color: #ffffff;
-        selection-background-color: #409eff;
-        selection-color: #000000;
-    }
-
-    QHeaderView::section {
-        background-color: #3c3c3c;
-        color: #ffffff;
-    }
-
-    QPushButton {
-        background-color: #3a3a3a;
-        color: #ffffff;
-    }
-
-    QPushButton:hover {
-        background-color: #505050;
-    }
-
-    QPushButton:pressed {
-        background-color: #606060;
-    }
-    """
-
-parent_directory = os.curdir
-# print(parent_directory)
-
 APP_ICON_PATH = os.path.dirname(os.path.abspath(__file__)) + r"\Assessment.ico"
-logo = os.path.dirname(os.path.abspath(__file__)) + r"\logo.png"
+logo_path = os.path.dirname(os.path.abspath(__file__)) + r"\LogoFull.png"
 if not os.path.exists(APP_ICON_PATH):
     APP_ICON_PATH = r"\\10.150.40.49\las\Ayman\Tools & Apps\Data For Tools\Icons\Assessment.ico"
 
-if os.path.exists(logo):
-    logo = r"\\10.150.40.49\las\Ayman\Tools & Apps\Data For Tools\Icons\logo.png"
+if os.path.exists(logo_path):
+    logo_path = r"\\10.150.40.49\las\Ayman\Tools & Apps\Data For Tools\Icons\LogoFull.png"
 
 last_week = (datetime.today() - timedelta(days=7)).date()
-yesterday = (datetime.today() - timedelta(days=1)).date( )
+yesterday = (datetime.today() - timedelta(days=1)).date()
 
 # supervisorName = "Raseel alharthi"
-# login_id= os.getlogin().lower().strip()
-admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c", "aalhares.c", "LMohammed.c",  "AMagboul.c", "telwahab.c", "nalsehemy.c"]]
+login_id= os.getlogin().lower().strip()
+# admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c", "aalhares.c", "LMohammed.c",  "AMagboul.c", "telwahab.c", "nalsuhaimi.c"]]
 excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 # login_id = sup_ids[10].lower().strip()
-login_id = admin_users[3].lower().strip()
-# login_id =  "oazab.c".lower().strip()
+# login_id = admin_users[6].lower().strip()
+# login_id =  "aaltoum.c".lower().strip()
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -346,22 +279,28 @@ def apply_theme_to_widgets(widget):
 
 
 conn=get_connection()
+admins = pd.read_sql("""SELECT DISTINCT("AdminID"), "AdminName" FROM evaluation."Administrator" WHERE "IsActive" = TRUE """, conn)
+admin_users = [i.lower().strip() for i in admins["AdminID"].unique().tolist()]
+print(admin_users)
+
 regions_df = pd.read_sql("""SELECT * FROM evaluation."Regions" """, conn)
 regions = regions_df["Region"].unique().tolist()
-conn.close()
 regions_dict = {}
 for re in regions:
     regions_dict[re] = regions_df[regions_df['Region']==re]["CityName"].tolist()
-supervisorName = retrive_supervisor(login_id)#.strip()
+if login_id in admin_users:
+    supervisorName = admins[admins["AdminID"].str.lower()==login_id]
+else:
+    supervisorName = retrive_supervisor(login_id)#.strip()
 print(login_id, supervisorName)
 # admin_users = admin_users + [i for i in get_admins_upadtes() if i not in admin_users]
 # print("+++++++++ ",admin_users)
 supervisors_sql = """SELECT DISTINCT("SupervisorName") FROM evaluation."EditorsList" 
                     WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
                     'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team') AND "SupervisorName" IS NOT NULL """
-engine = get_connection()
-current_supervisors = [i for i in pd.read_sql(supervisors_sql, engine)["SupervisorName"].tolist() if i not in excluded_supervisors]
-engine.close()
+
+current_supervisors = [i for i in pd.read_sql(supervisors_sql, conn)["SupervisorName"].tolist() if i not in excluded_supervisors]
+conn.close()
 # ----------------------------
 # Main Window: Case List
 # ----------------------------
@@ -373,9 +312,9 @@ class MainWindow(QtWidgets.QWidget):
         self.setWindowIcon(QIcon(APP_ICON_PATH))
         self.resize(1000, 720)
 
-        self.dark_mode_enabled = False    # or load from settings
+        # self.dark_mode_enabled = False    # or load from settings
 
-        ThemeManager.set_theme(self.dark_mode_enabled)
+        # ThemeManager.set_theme(self.dark_mode_enabled)
         # ThemeManager.apply_theme(self)    # ⬅ APPLY THEME TO MAIN WINDOW
         
 
@@ -388,7 +327,7 @@ class MainWindow(QtWidgets.QWidget):
         # palette.setColor(QPalette.ButtonText, QColor("#ffffff"))
         # self.setPalette(palette)
 
-        self.setFont(QFont("Cairo", 10))
+        self.setFont(QFont("Cairo", 8))
         
         # Main horizontal layout
         # === Main vertical layout (top title + content area) ===
@@ -399,21 +338,21 @@ class MainWindow(QtWidgets.QWidget):
         # icon = QPixmap(logo).scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio)
         # ----- Header Title -----
         header = QtWidgets.QWidget()
-        header.setStyleSheet("background-color: #367580")
+        header.setStyleSheet("background-color: #0A3556")
         header_layout = QtWidgets.QHBoxLayout(header)
         logo = QtWidgets.QLabel()
-        pixmap = QPixmap("logo.png").scaled(110, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pixmap = QPixmap(logo_path).scaled(110, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         logo.setPixmap(pixmap)
 
         title = QtWidgets.QLabel("Team Evaluation System")
         # if self.is_dark==True:
         #     title.setStyleSheet("font-size: 26px; font-weight: 700; margin-left: 10px; color: #0A3556;")
         # else:
-        title.setStyleSheet("font-size: 26px; font-weight: 700; margin-left: 10px; color: #0A3556;")
-        
+        title.setStyleSheet("font-size: 24px; font-weight: 500; margin-left: 10px; color: #ffffff;")
+        # if login_id in admin_users:
         rem, eval = self.getRemainingCount(supervisorName, replacement)
         self.remaining_label = QtWidgets.QLabel(f"Evaluated: {eval}   •   Remaining: {rem}")
-        self.remaining_label.setStyleSheet("font-size: 16px; font-weight: bold; padding-right: 10px; color: #ffffff;")
+        self.remaining_label.setStyleSheet("font-size: 16px; font-weight: bold; padding-right: 10px; color: #bc9975;")
         # Theme toggle button (sun/moon)
         self.theme_btn = QtWidgets.QPushButton("🌙")
         self.theme_btn.setFixedSize(36, 36)
@@ -450,12 +389,12 @@ class MainWindow(QtWidgets.QWidget):
         # Sidebar
         sidebar = QtWidgets.QFrame()
         sidebar.setFixedWidth(200)
-        sidebar.setStyleSheet("""
-        #     QFrame {
-        #         background-color: #E6EDF4;
-        #         border: 2px solid #d0d0d0;
-        #     }
-        # """)
+        # sidebar.setStyleSheet("""
+        # #     QFrame {
+        # #         background-color: #E6EDF4;
+        # #         border: 2px solid #d0d0d0;
+        # #     }
+        # # """)
 
         # Sidebar layout
         sidebar_layout = QtWidgets.QVBoxLayout(sidebar)
@@ -498,14 +437,16 @@ class MainWindow(QtWidgets.QWidget):
         # Supervisor:
         
         query = f"""SELECT "AssignedSupervisor","EditorName", "Region", "GeoAction" FROM evaluation."CaseAssignment" """
+        sidebar_layout.addWidget(QtWidgets.QLabel("Supervisor:"))
+        self.supervisor_drop = QtWidgets.QComboBox()
+        self.supervisor_drop.addItem("")
+        conn = get_connection()
+        self.supervisor_drop.addItems(pd.read_sql(query, conn)['AssignedSupervisor'].unique().tolist())
         if login_id in admin_users:
-            sidebar_layout.addWidget(QtWidgets.QLabel("Supervisor:"))
-            self.supervisor_drop = QtWidgets.QComboBox()
-            self.supervisor_drop.addItem("")
-            conn = get_connection()
-            self.supervisor_drop.addItems(pd.read_sql(query, conn)['AssignedSupervisor'].unique().tolist())
-            
             sidebar_layout.addWidget(self.supervisor_drop)
+            if self.supervisor_drop.currentText():
+                rem, eval = self.getRemainingCount(self.supervisor_drop.currentText(), replacement)
+                self.remaining_label = QtWidgets.QLabel(f"Evaluated: {eval}   •   Remaining: {rem}")
         # Editor
         sidebar_layout.addWidget(QtWidgets.QLabel("Editor:"))
         self.editor_drop = QtWidgets.QComboBox()
@@ -625,7 +566,7 @@ class MainWindow(QtWidgets.QWidget):
             }
             QTableWidget {
                 gridline-color: #dcdcdc;
-                selection-background-color: #367580;
+                selection-background-color: #BC9975;
             }
         """)
         main_vlayout.addWidget(self.table)
@@ -795,7 +736,10 @@ class MainWindow(QtWidgets.QWidget):
         """
         if login_id in admin_users:
             pass
+            # if self.supervisor_drop:
             current_supervisor = supervisor_name
+            # else:    
+            #     current_supervisor = supervisor_name
         else:
             if replacement_name:
                 current_supervisor = replacement_name
@@ -1125,16 +1069,16 @@ class MainWindow(QtWidgets.QWidget):
     def load_cases(self):
         supervisor = self.sup_input.text().strip()
         replacement_supervisor = get_replacement_supervisor(login_id)
-        if not supervisor:
-            QtWidgets.QMessageBox.warning(self, "Error", "Please enter Supervisor Name.")
-            return
+        # if not supervisor:
+        #     QtWidgets.QMessageBox.warning(self, "Error", "Please enter Supervisor Name.")
+        #     return
 
         conn = get_connection()
         check_updates = """SELECT * FROM evaluation."OpsData" 
             WHERE "UploadDate"=CURRENT_DATE 
             LIMIT 1"""
-        updateOps = pd.read_sql(check_updates, conn)
-        if updateOps.empty:
+        Ops_df = pd.read_sql(check_updates, conn)
+        if Ops_df.empty:
             if login_id in admin_users:
                 message = "Database is not up to date."
             else:
@@ -1148,9 +1092,9 @@ class MainWindow(QtWidgets.QWidget):
             SELECT COUNT(*) FROM evaluation."CaseAssignment"
             WHERE "AssignmentDate" = CURRENT_DATE
         """
-        count = pd.read_sql(check_sql, conn).iloc[0,0]
+        count = pd.read_sql(check_sql, conn)
 
-        if count == 0:
+        if count.empty:
             # self.check_unevaluateded_status()
             assigned_df, days_back, days_searched = self.generate_daily_assignment()
             if assigned_df is None:
@@ -1213,7 +1157,7 @@ class MainWindow(QtWidgets.QWidget):
         if self.cases_df.empty:
             return
         eval_window = EvaluationWindow(self.cases_df, row, self.sup_input.text().strip())
-        ThemeManager.apply_theme(eval_window)
+        ThemeManager.apply_theme()
         eval_window.exec_()
 
 # ----------------------------
@@ -1230,17 +1174,17 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.index = row_index  # ✅ Fix: define index for navigation
         self.supervisor_name = supervisor_name
 
-        self.setFont(QFont("Cairo", 11))
-        self.setStyleSheet("""
-            QGroupBox { font-weight: bold; color: #444; border: 1px solid #ccc; border-radius: 6px; margin-top: 8px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; top: -4px; }
-            QLabel { color: #333; }
-            QPushButton {
-                background-color: #0A3556; color: white;
-                padding: 6px 12px; border-radius: 6px;
-            }
-            QPushButton:hover { background-color: #005a9e; }
-        """)
+        self.setFont(QFont("Cairo", 9))
+        # self.setStyleSheet("""
+        #     QGroupBox { font-weight: bold; color: #444; border: 1px solid #ccc; border-radius: 6px; margin-top: 8px; }
+        #     QGroupBox::title { subcontrol-origin: margin; left: 10px; top: -4px; }
+        #     QLabel { color: #333; }
+        #     QPushButton {
+        #         background-color: #0A3556; color: white;
+        #         padding: 6px 12px; border-radius: 6px;
+        #     }
+        #     QPushButton:hover { background-color: #005a9e; }
+        # """)
 
         self.initUI()
 
@@ -1257,7 +1201,7 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.copy_FR.setFixedWidth(80)
         self.copy_FR.setStyleSheet("""
             QPushButton {
-                # background-color: #367580;
+                background-color: #0A3556;
                 color: white;
                 border-radius: 6px;
                 padding: 4px;
@@ -1270,7 +1214,7 @@ class EvaluationWindow(QtWidgets.QDialog):
 
         self.header = QtWidgets.QLabel(f"Case Evaluation - {self.cases_df.iloc[self.index]['Case Number']}")
         self.header.setAlignment(Qt.AlignCenter)
-        self.header.setStyleSheet("font-size:16px; font-weight:bold; color:#0A3556; margin-bottom:6px;")
+        self.header.setStyleSheet("font-size:16px; font-weight:bold; color:#824131; margin-bottom:6px;")
         header_layout.addWidget(self.header)
 
         # Copy REN button
@@ -1383,12 +1327,11 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.comment_text = QtWidgets.QTextEdit()
         self.comment_text.setReadOnly(False)
         self.comment_text.setMaximumHeight(60)
-        eval_layout.addWidget(comment, (len(fields) // 2) + 1, 0, 1, 2)
-        eval_layout.addWidget(self.comment_text, len(fields)//2 + 2,0, 1, 4)
-            
+        # eval_layout.addWidget(comment, (len(fields) // 2) + 1, 0, 1, 2)
+        # eval_layout.addWidget(self.comment_text, len(fields)//2 + 2,0, 1, 4)
+                
         # print(self.eval_fields)
         
-
         main_layout.addWidget(eval_group)
 
         # --- Buttons in One Row ---
@@ -1628,7 +1571,24 @@ class ReplacementManager(QtWidgets.QDialog):
 
         # Absent supervisor
         self.absent_combo = QtWidgets.QComboBox()
-        self.absent_combo.addItems(current_supervisors)  
+        self.absent_combo.addItems(current_supervisors)
+        # self.absent_combo.setStyleSheet("""
+        #     QComboBox {
+        #     color: #ffffff;
+        #     background-color: #0A3556;
+        #     border-radius: 6px;
+        #     padding: 4px;
+        #     font-weight: bold;
+        #     }
+        #     QComboBox::drop-down {
+        #     border: none;
+        #     }
+        #     QComboBox QAbstractItemView {
+        #     color: #ffffff;
+        #     background-color: #0A3556;
+        #     selection-background-color: #367580;
+        #     }
+        # """)
 
         # Replacement supervisor
         self.replacement_combo = QtWidgets.QComboBox()
@@ -1684,7 +1644,27 @@ class UpdateOpsData(QtWidgets.QDialog):
         # --- UI Elements ---
         self.label = QtWidgets.QLabel("Select OpsData Excel file:")
         self.btn_select = QtWidgets.QPushButton("Browse")
+        self.btn_select.setStyleSheet("""
+           QPushButton {
+                background-color: #0A3556;
+                color: white;
+                border-radius: 6px;
+                padding: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #a1503e; }
+        """)
         self.btn_run = QtWidgets.QPushButton("Update OP Data")
+        self.btn_run.setStyleSheet("""
+           QPushButton {
+                background-color: #824131;
+                color: white;
+                border-radius: 6px;
+                padding: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background-color: #a1503e; }
+        """)
         self.status = QtWidgets.QLabel("")
 
         # Disable Run button until a file is chosen
@@ -1702,7 +1682,7 @@ class UpdateOpsData(QtWidgets.QDialog):
         self.btn_select.clicked.connect(self.select_excel)
         # self.btn_run.clicked.connect(lambda: self.run_update
         self.btn_run.clicked.connect(self.run_update)
-
+        ThemeManager.apply_theme()
         # ⭐ APPLY THE THEME
         # ThemeManager.apply_theme(self)
 
@@ -1739,6 +1719,10 @@ class UpdateOpsData(QtWidgets.QDialog):
             wb.close()
             if header_row_idx is not None:
                 df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=header_row_idx)
+                df = df.drop_duplicates(subset="Case Number")
+                df = df[(df['Geo Supervisor'].notnull()) & (df['GEO S Completion'].notnull())]
+                df = df.reset_index(drop=True)
+                print(len(df))
                 df["UniqueKey"] = [str(i) + '_' + str(pd.to_datetime(j).round('s'))  for i, j in zip(df["Case Number"].values, df["GEO S Completion"].values)]
                 df["UploadDate"] = datetime.now().date()
                 df["UploadedBy"] = os.getlogin()
@@ -1767,12 +1751,14 @@ class UpdateOpsData(QtWidgets.QDialog):
     def join_editors_list(self, ops_df, editorsList):
         """Join Excel data with userlist on a given key."""
         print("🔁Joining Editors' List")
-        print(editorsList.columns)
+        
         try:
             ops_df['GEO S Completion'] = pd.to_datetime(ops_df['GEO S Completion']).dt.normalize()
-            editorsList = editorsList.rename({'CasePortalName': 'Geo Supervisor'},axis=1)
+            editorsList = editorsList.rename({'CaseProtalName': 'Geo Supervisor'}, axis=1)
             editorsList["ListDate"] = pd.to_datetime(editorsList["ListDate"]).dt.normalize()
             print("✅ Date Normalization!")
+            print(ops_df.columns[-15:])
+            print(editorsList.columns)
             ops_df = ops_df.sort_values(by=["GEO S Completion", "Geo Supervisor"])
             editorsList = editorsList.sort_values(by=["ListDate", "Geo Supervisor"])
             print("✅ Sorted Dataframes")
@@ -1781,7 +1767,7 @@ class UpdateOpsData(QtWidgets.QDialog):
             print("✅ Merged")
             ops_df['GEO S Completion'] = [pd.to_datetime(i).date() for i in ops_df['GEO S Completion']]
             print("✅ GEO S Completion Converted")
-            print(ops_df.columns[-10:])
+            # print(ops_df.columns[-10:])
             ops_df['ListDate'] = [pd.to_datetime(i).date() for i in ops_df['ListDate']]
             print("✅ Ops Data was joined successfully")
             return ops_df
@@ -1833,6 +1819,68 @@ class UpdateOpsData(QtWidgets.QDialog):
 # ------------------
 # THEME Manager
 # ------------------
+# class ThemeManager:
+#     is_dark = False
+
+#     @staticmethod
+#     def set_theme(is_dark: bool):
+#         ThemeManager.is_dark = is_dark
+#         ThemeManager.apply_theme()
+
+#     @staticmethod
+#     def toggle_theme():
+#         # Flip the current theme
+#         ThemeManager.is_dark = not ThemeManager.is_dark
+#         # Apply the new theme to the app
+#         ThemeManager.apply_theme()
+
+#     @staticmethod
+#     def fix_input_text_color():
+#         palette = QtWidgets.QApplication.palette()
+
+#         for w in QtWidgets.QApplication.allWidgets():
+#             if isinstance(w, (QtWidgets.QLineEdit,
+#                             QtWidgets.QComboBox,
+#                             QtWidgets.QSpinBox,
+#                             QtWidgets.QDoubleSpinBox,
+#                             QtWidgets.QDateEdit,
+#                             QtWidgets.QDateTimeEdit,
+#                             QtWidgets.QTextEdit,
+#                             QtWidgets.QPlainTextEdit)):
+
+#                 w.setPalette(palette)
+
+#     @staticmethod
+#     def apply_theme():
+#         if ThemeManager.is_dark:
+#             bg = QtGui.QColor(45, 45, 45)
+#             fg = QtGui.QColor(240, 240, 240)
+#             base = QtGui.QColor(60, 60, 60)
+#         else:
+#             bg = QtGui.QColor(240, 240, 240)
+#             fg = QtGui.QColor(0, 0, 0)
+#             base = QtGui.QColor(255, 255, 255)
+
+#         palette = QtGui.QPalette()
+#         palette.setColor(QtGui.QPalette.Window, bg)
+#         palette.setColor(QtGui.QPalette.WindowText, fg)
+#         palette.setColor(QtGui.QPalette.Base, base)
+#         palette.setColor(QtGui.QPalette.AlternateBase, bg)
+#         palette.setColor(QtGui.QPalette.Text, fg)
+#         palette.setColor(QtGui.QPalette.Button, bg)
+#         palette.setColor(QtGui.QPalette.ButtonText, fg)
+#         palette.setColor(QtGui.QPalette.PlaceholderText, fg)
+#         palette.setColor(QtGui.QPalette.ToolTipText, fg)
+#         palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(53, 132, 228))
+#         palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
+
+#         QtWidgets.QApplication.setPalette(palette)
+
+#         ThemeManager.fix_input_text_color()
+        
+
+from PyQt5 import QtWidgets, QtGui
+
 class ThemeManager:
     is_dark = False
 
@@ -1843,13 +1891,12 @@ class ThemeManager:
 
     @staticmethod
     def toggle_theme():
-        # Flip the current theme
         ThemeManager.is_dark = not ThemeManager.is_dark
-        # Apply the new theme to the app
         ThemeManager.apply_theme()
 
     @staticmethod
     def apply_theme():
+        # colors
         if ThemeManager.is_dark:
             bg = QtGui.QColor(45, 45, 45)
             fg = QtGui.QColor(240, 240, 240)
@@ -1867,17 +1914,100 @@ class ThemeManager:
         palette.setColor(QtGui.QPalette.Text, fg)
         palette.setColor(QtGui.QPalette.Button, bg)
         palette.setColor(QtGui.QPalette.ButtonText, fg)
+        palette.setColor(QtGui.QPalette.ToolTipText, fg)
+        palette.setColor(QtGui.QPalette.PlaceholderText, fg)
         palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(53, 132, 228))
         palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
 
         QtWidgets.QApplication.setPalette(palette)
-        
-            # Explicitly fix QComboBox text color if it ignores palette
-    for w in QtWidgets.QApplication.allWidgets():
-        if isinstance(w, QtWidgets.QComboBox):
-            w.setStyle(QtWidgets.QStyleFactory.create("Windows"))  # or leave default style
 
+        # Apply palette/explicit role fixes to existing widgets
+        ThemeManager._apply_palette_to_existing_widgets(palette, base, fg)
 
+    @staticmethod
+    def _apply_palette_to_existing_widgets(palette: QtGui.QPalette, base: QtGui.QColor=None, fg: QtGui.QColor=None):
+        """
+        Apply palette to all existing widgets. For input widgets, we patch the
+        widget's own palette so that QPalette.Text and QPalette.Base are set.
+        This avoids using stylesheets and preserves native rendering.
+        """
+
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+
+        # First: apply the application palette to top-level widgets (makes most widgets inherit)
+        for w in app.topLevelWidgets():
+            w.setPalette(palette)
+            # sometimes needed to force a repaint
+            w.update()
+
+        # Now: individually patch input widgets that commonly ignore app palette roles
+        for w in app.allWidgets():
+            # Skip if widget has its own stylesheet — that will override palette
+            if hasattr(w, "styleSheet") and w.styleSheet():
+                # If you intended to use stylesheets, then palette changes may not show.
+                # You can either clear the stylesheet here (w.setStyleSheet("")) or leave it.
+                # For safety we don't clear it, but inform the user in debug.
+                # print(f"Widget {w} has stylesheet -> palette may be ignored")
+                continue
+
+            if isinstance(w, (QtWidgets.QLineEdit, QtWidgets.QTextEdit, QtWidgets.QPlainTextEdit)):
+                wp = w.palette()
+                wp.setColor(QtGui.QPalette.Text, palette.color(QtGui.QPalette.Text))
+                wp.setColor(QtGui.QPalette.Base, palette.color(QtGui.QPalette.Base))
+                wp.setColor(QtGui.QPalette.PlaceholderText, palette.color(QtGui.QPalette.PlaceholderText))
+                w.setPalette(wp)
+                w.update()
+
+            elif isinstance(w, QtWidgets.QComboBox):
+                # For combobox, set palette for the widget and its internal lineEdit if present
+                wp = w.palette()
+                wp.setColor(QtGui.QPalette.Text, palette.color(QtGui.QPalette.Text))
+                wp.setColor(QtGui.QPalette.Base, palette.color(QtGui.QPalette.Base))
+                w.setPalette(wp)
+                # If the combobox has an editable line edit, patch it too
+                le = w.lineEdit()
+                if le is not None:
+                    lep = le.palette()
+                    lep.setColor(QtGui.QPalette.Text, palette.color(QtGui.QPalette.Text))
+                    lep.setColor(QtGui.QPalette.Base, palette.color(QtGui.QPalette.Base))
+                    le.setPalette(lep)
+                    le.update()
+                w.update()
+
+            elif isinstance(w, (QtWidgets.QSpinBox, QtWidgets.QDoubleSpinBox, QtWidgets.QDateEdit, QtWidgets.QDateTimeEdit)):
+                wp = w.palette()
+                wp.setColor(QtGui.QPalette.Text, palette.color(QtGui.QPalette.Text))
+                wp.setColor(QtGui.QPalette.Base, palette.color(QtGui.QPalette.Base))
+                w.setPalette(wp)
+                w.update()
+
+            elif isinstance(w, QtWidgets.QTableWidget):
+                # TableWidget uses Text and Base for cells; also update header views
+                wp = w.palette()
+                wp.setColor(QtGui.QPalette.Text, palette.color(QtGui.QPalette.Text))
+                wp.setColor(QtGui.QPalette.Base, palette.color(QtGui.QPalette.Base))
+                w.setPalette(wp)
+                # Headers:
+                header = w.horizontalHeader()
+                if header is not None:
+                    hp = header.palette()
+                    hp.setColor(QtGui.QPalette.WindowText, palette.color(QtGui.QPalette.WindowText))
+                    header.setPalette(hp)
+                w.viewport().update()
+                w.update()
+
+            elif isinstance(w, QtWidgets.QPushButton):
+                # Buttons usually respect ButtonText, but patch if needed
+                bp = w.palette()
+                bp.setColor(QtGui.QPalette.ButtonText, palette.color(QtGui.QPalette.ButtonText))
+                bp.setColor(QtGui.QPalette.Button, palette.color(QtGui.QPalette.Button))
+                w.setPalette(bp)
+                w.update()
+
+        # Process events to force redraw
+        QtWidgets.QApplication.processEvents()
 
 
 # ----------------------------

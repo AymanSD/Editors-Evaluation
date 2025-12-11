@@ -557,131 +557,131 @@ class MainWindow(QtWidgets.QWidget):
     # --------------------------
     # Light/Dark Themes
     # --------------------------
-    # def apply_light_theme(self):
-    #     palette = QPalette()
-    #     palette.setColor(QPalette.Window, QColor("#F4F4F4"))
-    #     palette.setColor(QPalette.Base, QColor("#FFFFFF"))
-    #     palette.setColor(QPalette.AlternateBase, QColor("#F1F1F1"))
-    #     palette.setColor(QPalette.Button, QColor("#0A3556"))
-    #     palette.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
-    #     palette.setColor(QPalette.Text, QColor("#000000"))
-    #     palette.setColor(QPalette.WindowText, QColor("#0A3556"))
-    #     self.setPalette(palette)
-    #     # '#367580'
-    #     self.setStyleSheet("""
-    #         QWidget {
-    #             background-color: #F4F4F4;
-    #             color: #000000;
-    #         }
+    def apply_light_theme(self):
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor("#F4F4F4"))
+        palette.setColor(QPalette.Base, QColor("#FFFFFF"))
+        palette.setColor(QPalette.AlternateBase, QColor("#F1F1F1"))
+        palette.setColor(QPalette.Button, QColor("#0A3556"))
+        palette.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
+        palette.setColor(QPalette.Text, QColor("#000000"))
+        palette.setColor(QPalette.WindowText, QColor("#0A3556"))
+        self.setPalette(palette)
+        # '#367580'
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #F4F4F4;
+                color: #000000;
+            }
 
-    #         QFrame {
-    #             background-color: #367580;
-    #             border: 1px solid #CCCCCC;
-    #             padding: 2px;
-    #             border-radius: 6px;
-    #         }
+            QFrame {
+                background-color: #367580;
+                border: 1px solid #CCCCCC;
+                padding: 2px;
+                border-radius: 6px;
+            }
 
-    #         QLineEdit, QComboBox, QDateEdit {
-    #             background-color: white;
-    #             color: #000;
-    #             border: 1px solid #BFBFBF;
-    #             padding: 4px;
-    #         }
+            QLineEdit, QComboBox, QDateEdit {
+                background-color: white;
+                color: #000;
+                border: 1px solid #BFBFBF;
+                padding: 4px;
+            }
 
-    #         QPushButton {
-    #             background-color: #0A3556;
-    #             color: white;
-    #             border-radius: 6px;
-    #         }
+            QPushButton {
+                background-color: #0A3556;
+                color: white;
+                border-radius: 6px;
+            }
 
-    #         QTableWidget {
-    #             background-color: #ffffff;
-    #             alternate-background-color: #f3f3f3;
-    #         }
+            QTableWidget {
+                background-color: #ffffff;
+                alternate-background-color: #f3f3f3;
+            }
 
-    #         QHeaderView::section {
-    #             background-color: #0A3556;
-    #             color: white;
-    #             font-weight: bold;
-    #             padding: 4px;
-    #         }
-    #     """)
+            QHeaderView::section {
+                background-color: #0A3556;
+                color: white;
+                font-weight: bold;
+                padding: 4px;
+            }
+        """)
 
     #     self.theme_btn.setText("🌙")  # dark mode icon
 
-    # def apply_dark_theme(self):
-    #     palette = QPalette()
-    #     palette.setColor(QPalette.Window, QColor("#121212"))
-    #     palette.setColor(QPalette.Base, QColor("#1E1E1E"))
-    #     palette.setColor(QPalette.AlternateBase, QColor("#2A2A2A"))
-    #     palette.setColor(QPalette.Button, QColor("#BC9975"))
-    #     palette.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
-    #     palette.setColor(QPalette.Text, QColor("#DDDDDD"))
-    #     palette.setColor(QPalette.WindowText, QColor("#FFFFFF"))
-    #     self.setPalette(palette)
-    #     "#717070"
-    #     "#c2c2c2"
-    #     self.setStyleSheet("""
-    #         QWidget {
-    #             background-color: #121212;
-    #             color: #E0E0E0;
-    #         }
+    def apply_dark_theme(self):
+        palette = QPalette()
+        palette.setColor(QPalette.Window, QColor("#121212"))
+        palette.setColor(QPalette.Base, QColor("#1E1E1E"))
+        palette.setColor(QPalette.AlternateBase, QColor("#2A2A2A"))
+        palette.setColor(QPalette.Button, QColor("#BC9975"))
+        palette.setColor(QPalette.ButtonText, QColor("#FFFFFF"))
+        palette.setColor(QPalette.Text, QColor("#DDDDDD"))
+        palette.setColor(QPalette.WindowText, QColor("#FFFFFF"))
+        self.setPalette(palette)
+        "#717070"
+        "#c2c2c2"
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #121212;
+                color: #E0E0E0;
+            }
 
-    #         QFrame {
-    #             background-color: #1E1E1E;
-    #             border: 1px solid #c2c2c2;
-    #             padding: 2px
-    #             border-radius: 6px;
-    #         }
+            QFrame {
+                background-color: #1E1E1E;
+                border: 1px solid #c2c2c2;
+                padding: 2px
+                border-radius: 6px;
+            }
 
-    #         QLineEdit, QComboBox, QDateEdit {
-    #             background-color: #717070;
-    #             color: #E0E0E0;
-    #             border: 1px solid #c2c2c2;
-    #             padding: 6px;
-    #         }
+            QLineEdit, QComboBox, QDateEdit {
+                background-color: #717070;
+                color: #E0E0E0;
+                border: 1px solid #c2c2c2;
+                padding: 6px;
+            }
 
-    #         QPushButton {
-    #             background-color: #BC9975;
-    #             color: white;
-    #             border: 1px solid #c2c2c2;
-    #             border-radius: 6px;
-    #         }
+            QPushButton {
+                background-color: #BC9975;
+                color: white;
+                border: 1px solid #c2c2c2;
+                border-radius: 6px;
+            }
 
-    #         QPushButton:hover {
-    #             background-color: #4D8BC7;
-    #         }
+            QPushButton:hover {
+                background-color: #4D8BC7;
+            }
 
-    #         QTableWidget {
-    #             background-color: #1E1E1E;
-    #             alternate-background-color: #2A2A2A;
-    #             color: #E0E0E0;
-    #         }
+            QTableWidget {
+                background-color: #1E1E1E;
+                alternate-background-color: #2A2A2A;
+                color: #E0E0E0;
+            }
 
-    #         QHeaderView::section {
-    #             background-color: #3A6EA5;
-    #             color: white;
-    #             font-weight: bold;
-    #             padding: 4px;
-    #         }
-    #     """)
+            QHeaderView::section {
+                background-color: #3A6EA5;
+                color: white;
+                font-weight: bold;
+                padding: 4px;
+            }
+        """)
 
     #     self.theme_btn.setText("☀️")  # light mode icon
 
-    # def toggle_theme(self):
-    #     if self.is_dark:
-    #         self.apply_light_theme()
-    #     else:
-    #         self.apply_dark_theme()
-    #     self.is_dark = not self.is_dark
-
     def toggle_theme(self):
-        if ThemeManager.current_theme == "light":
-            ThemeManager.current_theme = "dark"
+        if self.is_dark:
+            self.apply_light_theme()
         else:
-            ThemeManager.current_theme = "light"
+            self.apply_dark_theme()
+        self.is_dark = not self.is_dark
 
-        ThemeManager.apply_theme(self)
+    # def toggle_theme(self):
+    #     if ThemeManager.current_theme == "light":
+    #         ThemeManager.current_theme = "dark"
+    #     else:
+    #         ThemeManager.current_theme = "light"
+
+    #     ThemeManager.apply_theme(self)
 
     # --------------------------
     # Get Remaining Cases Count
@@ -1607,7 +1607,7 @@ class UpdateOpsData(QtWidgets.QDialog):
         self.btn_run.clicked.connect(self.run_update)
 
         # ⭐ APPLY THE THEME
-        ThemeManager.apply_theme(self)
+        # ThemeManager.apply_theme(self)
 
     def update_status(self, msg):
         self.status.setText(msg)
@@ -1736,48 +1736,48 @@ class UpdateOpsData(QtWidgets.QDialog):
 # ------------------
 # THEME Manager
 # ------------------
-class ThemeManager:
-    current_theme = "light"
+# class ThemeManager:
+#     current_theme = "light"
 
-    themes = {
-        "light": {
-            "window_bg": "#ffffff",
-            "text_color": "#000000",
-            "title_color": "#0A3556",
-        },
-        "dark": {
-            "window_bg": "#2b2b2b",
-            "text_color": "#f0f0f0",
-            "title_color": "#ffffff",
-        }
-    }
-    @classmethod
-    def apply_theme(cls, widget):
-        theme = cls.themes[cls.current_theme]
+#     themes = {
+#         "light": {
+#             "window_bg": "#ffffff",
+#             "text_color": "#000000",
+#             "title_color": "#0A3556",
+#         },
+#         "dark": {
+#             "window_bg": "#2b2b2b",
+#             "text_color": "#f0f0f0",
+#             "title_color": "#ffffff",
+#         }
+#     }
+#     @classmethod
+#     def apply_theme(cls, widget):
+#         theme = cls.themes[cls.current_theme]
 
-        widget.setStyleSheet(f"""
-            QWidget {{
-                background-color: {theme['window_bg']};
-                color: {theme['text_color']};
+#         widget.setStyleSheet(f"""
+#             QWidget {{
+#                 background-color: {theme['window_bg']};
+#                 color: {theme['text_color']};
                 
-            }}""")
+#             }}""")
 
-        #     QLabel#TitleLabel {{
-        #         font-size: 12pt;
-        #         font-weight: bold;
-        #         color: {theme['title_color']};
-        #     }}
+#         #     QLabel#TitleLabel {{
+#         #         font-size: 12pt;
+#         #         font-weight: bold;
+#         #         color: {theme['title_color']};
+#         #     }}
 
-        #     QPushButton {{
-        #         padding: 6px;
-        #         border-radius: 6px;
-        #     }}
+#         #     QPushButton {{
+#         #         padding: 6px;
+#         #         border-radius: 6px;
+#         #     }}
 
-        #     QLineEdit, QComboBox, QTableWidget {{
-        #         background-color: #585858;
-        #         color: black;
-        #     }}
-        # """)
+#         #     QLineEdit, QComboBox, QTableWidget {{
+#         #         background-color: #585858;
+#         #         color: black;
+#         #     }}
+#         # """)
 
 
 
