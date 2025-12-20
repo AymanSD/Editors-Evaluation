@@ -16,19 +16,16 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView
 import plotly.graph_objects as go
 import plotly.io as pio
 
-
-
-
 # ----------------------------
 # Database connection settings
 # ----------------------------
 DB_SETTINGS = {
-    # "dbname": "GSA",
-    "dbname": "GRS",
+    "dbname": "GSA",
+    # "dbname": "GRS",
     "user": "evalApp",
     "password": "app1234",
-    "host": "10.150.40.74",
-    # "host":"127.0.0.1",
+    # "host": "10.150.40.74",
+    "host":"127.0.0.1",
     "port": "5432"
 }
 
@@ -48,9 +45,9 @@ login_id= os.getlogin().lower().strip()
 # admin_users = [i.lower().strip() for i in ["Aaltoum", "MIbrahim.c", "aalhares.c", "LMohammed.c",  "AMagboul.c", "telwahab.c", "nalsuhaimi.c"]]
 excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
-# login_id = sup_ids[6].lower().strip()
+login_id = sup_ids[6].lower().strip()
 # login_id = admin_users[6].lower().strip()
-login_id =  "oazab.c".lower().strip()
+# login_id =  "Aaltoum".lower().strip()
 
 # ----------------------------
 # Helper function for DB connection
@@ -301,19 +298,15 @@ regions = regions_df["Region"].unique().tolist()
 regions_dict = {}
 for re in regions:
     regions_dict[re] = regions_df[regions_df['Region']==re]["CityName"].tolist()
-# if login_id in admin_users:
-#     supervisorName = admins[admins["AdminID"]==login_id]["AdminName"].iloc[0] + ''
-# else:
 supervisorName = retrive_supervisor(login_id)#.strip()
 print(login_id, supervisorName)
-# admin_users = admin_users + [i for i in get_admins_upadtes() if i not in admin_users]
-# print("+++++++++ ",admin_users)
 supervisors_sql = """SELECT DISTINCT("SupervisorName") FROM evaluation."EditorsList" 
                     WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
                     'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team') AND "SupervisorName" IS NOT NULL """
 
 current_supervisors = [i for i in pd.read_sql(supervisors_sql, conn)["SupervisorName"].tolist() if i not in excluded_supervisors]
 conn.close()
+
 # ----------------------------
 # Main Window: Case List
 # ----------------------------
@@ -417,12 +410,12 @@ class MainWindow(QtWidgets.QWidget):
         
         # Date range
         # sidebar_layout.addWidget(QtWidgets.QLabel("From:"))
-        # self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-7))
+        self.start_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate().addDays(-7))
         # self.start_date.setCalendarPopup(True)
         # sidebar_layout.addWidget(self.start_date)
 
         # sidebar_layout.addWidget(QtWidgets.QLabel("To:"))
-        # self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())#.addDays(-1))
+        self.end_date = QtWidgets.QDateEdit(QtCore.QDate.currentDate())#.addDays(-1))
         # self.end_date.setCalendarPopup(True)
         # sidebar_layout.addWidget(self.end_date)
         
@@ -600,12 +593,12 @@ class MainWindow(QtWidgets.QWidget):
         # stats_layout.addStretch()
         # self.tabs.addTab(stats_tab, "📊 Statistics")
 
-        stats_tab = StatisticsTab(
-            login_id=login_id,
-            admin_users=admin_users
-        )
+        # stats_tab = StatisticsTab(
+        #     login_id=login_id,
+        #     admin_users=admin_users
+        # )
 
-        self.tabs.addTab(stats_tab, "📊 Statistics")
+        # self.tabs.addTab(stats_tab, "📊 Statistics")
 
          # # Combine sidebar and table area
         # content_layout.addWidget(sidebar)
@@ -683,6 +676,7 @@ class MainWindow(QtWidgets.QWidget):
     
 
     def check_unevaluateded_status(self):
+        print("Checking Unevaluated Cases...")
         conn = get_connection()
         
         # 1. Fetch all un-evaluated assignments
@@ -693,6 +687,7 @@ class MainWindow(QtWidgets.QWidget):
         
         assignments = pd.read_sql(query_assignments, conn)
         if assignments.empty:
+            print("All unevaluated cases are still valid")
             return  # Nothing to do
         
         print(f"There are {len(assignments)} un-evaluated cases to be updated")
@@ -777,143 +772,150 @@ class MainWindow(QtWidgets.QWidget):
     # On-demand assignment
     # --------------------------
     def generate_daily_assignment(self):
-        # self.check_unevaluateded_status()
         try:
             max_days = 180
-            day_back = 1
-            found_cases = False
-            engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
-            # engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
+            # engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
+            engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
             conn = get_connection()
-            active_editors = pd.read_sql("""SELECT DISTINCT("CasePortalName") FROM evaluation."EditorsList" 
-                                        WHERE "CasePortalName" IS NOT NULL
-                                        AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
-                                        """, conn)["CasePortalName"].tolist()
-            while day_back <= max_days:
-                target_date = self.end_date.date().toPyDate() - timedelta(days=day_back)
-                # print(f"Searching Cases on {target_date}")
-                    # Pull yesterday's cases
-                sql = """
-                    SELECT *
-                    FROM evaluation."OpsData"
-                    WHERE "GEO S Completion"::date = %s
-                    AND "GeoAction" IS NOT NULL AND "GeoAction" <> 'No Action'
-                    AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
-                    AND "UniqueKey" NOT IN (
-                        SELECT "UniqueKey" FROM evaluation."EvaluationTable"
-                        UNION
-                        SELECT "UniqueKey" FROM evaluation."CaseAssignment"
-                    )
-                """
-                df = pd.read_sql(sql, conn, params=[target_date])
 
-                if not df.empty:# or len(df["Geo Supervisor"].unique().tolist()) >= 20:
-                    found_cases = True
-                    break
-                day_back += 1
-                # print(f"No cases found on {target_date}. Searching back {day_back} days...")
+            active_editors = pd.read_sql("""
+                SELECT DISTINCT("CasePortalName")
+                FROM evaluation."EditorsList"
+                WHERE "CasePortalName" IS NOT NULL
+                AND "GroupID" IN (
+                    'Editor Morning Shift',
+                    'Editor Night Shift',
+                    'Pod-Al-Shuhada-1',
+                    'Pod-Al-Shuhada-2',
+                    'Urgent Team'
+                )
+            """, conn)["CasePortalName"].tolist()
 
-            if not found_cases:
-                QtWidgets.QMessageBox.warning(None, "No Cases", 
-                    f"No valid cases found in the past {max_days} days.")
-                return None, day_back-1
+            # Pre-load supervisors (from any recent OpsData)
+            supervisors_df = pd.read_sql("""
+                SELECT DISTINCT "SupervisorName"
+                FROM evaluation."OpsData"
+                WHERE "SupervisorName" IS NOT NULL
+            """, conn)
 
-            # Editors and Supervisors for assignment
-
-            supervisors = [i for i in df["SupervisorName"].unique() if not pd.isnull(i) and i not in excluded_supervisors]
-            excluded = ["Mahmoud Aboalmaged", "Moataz Ibrahim"] + [i for i in supervisors]
-            # editors = [i for i in active_editors if not pd.isnull(i) and i not in excluded]
+            supervisors = [
+                s for s in supervisors_df["SupervisorName"].tolist()
+                if s not in excluded_supervisors
+            ]
             random.shuffle(supervisors)
 
+            if not supervisors:
+                QtWidgets.QMessageBox.warning(None, "No Supervisors", "No supervisors available.")
+                return None, 0, 0
+
             assignments = []
+            dates_back_used = set()
 
-            # Create a list of all dates to search, starting with target_date
-            search_dates = [self.end_date.date().toPyDate() - timedelta(days=x) for x in range(1, max_days + 1)]
-            dates_back = []
-            for i, editor in enumerate(active_editors):
-                # 1 — Get cases for this editor from the primary (target) date
-                editor_cases = df[df["Geo Supervisor"] == editor]
+            # 🔁 MAIN LOOP — PER EDITOR
+            for idx, editor in enumerate(active_editors):
+                reject_case = None
+                edit_case = None
 
-                reject_case = editor_cases[editor_cases["GeoAction"] == 'رفض']
-                edit_case = editor_cases[editor_cases["GeoAction"] != 'رفض']
-                # print(f"==================================================\n Initial Df Editor: {editor} | Date: {target_date}\n{len(reject_case)}, {len(edit_case)}")
-                # 2 — If missing categories → search older dates
-                if reject_case.empty or edit_case.empty:
+                for day_back in range(1, max_days + 1):
+                    search_date = self.end_date.date().toPyDate() - timedelta(days=day_back)
+                    dates_back_used.add(search_date)
 
-                    for d in search_dates[1:]:  # skip target_date already checked
-                        # print(f"==================================================\n Searching for cases on {d}")
-                        if d not in dates_back:
-                            dates_back.append(d)
-                        sql_more = """
-                            SELECT *
-                            FROM evaluation."OpsData"
-                            WHERE "GEO S Completion"::date = %s
-                            AND "GeoAction" IS NOT NULL AND "GeoAction" <> 'No Action'
-                            AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
-                            AND "Geo Supervisor" = %s
-                            AND "UniqueKey" NOT IN (
-                                    SELECT "UniqueKey" FROM evaluation."EvaluationTable"
-                                    UNION
-                                    SELECT "UniqueKey" FROM evaluation."CaseAssignment"
-                            )
-                        """
+                    sql = """
+                        SELECT *
+                        FROM evaluation."OpsData"
+                        WHERE "GEO S Completion"::date = %s
+                        AND "Geo Supervisor" = %s
+                        AND "GeoAction" IS NOT NULL
+                        AND "GeoAction" <> 'No Action'
+                        AND "GroupID" IN (
+                            'Editor Morning Shift',
+                            'Editor Night Shift',
+                            'Pod-Al-Shuhada-1',
+                            'Pod-Al-Shuhada-2',
+                            'Urgent Team'
+                        )
+                        AND "UniqueKey" NOT IN (
+                            SELECT "UniqueKey" FROM evaluation."EvaluationTable"
+                            UNION
+                            SELECT "UniqueKey" FROM evaluation."CaseAssignment"
+                        )
+                    """
 
-                        df_more = pd.read_sql(sql_more, conn, params=[d, editor])
+                    df = pd.read_sql(sql, conn, params=[search_date, editor])
 
-                        if df_more.empty:
-                            continue
+                    if df.empty:
+                        continue
 
-                        # append additional rows
-                        if reject_case.empty:
-                            reject_case = df_more[df_more["GeoAction"] == "رفض"]
-                            # reject_case = pd.concat([reject_case, df_more[df_more["GeoAction"] == "رفض"]])
+                    if reject_case is None:
+                        rc = df[df["GeoAction"] == "رفض"]
+                        if not rc.empty:
+                            reject_case = rc.sample(1)
 
-                        if edit_case.empty:
-                            edit_case = df_more[df_more["GeoAction"] != "رفض"]
-                            # edit_case = pd.concat([edit_case, df_more[df_more["GeoAction"] != "رفض"]])
-                        # print(editor,":", len(reject_case), "/ ", len(edit_case))
-                        # Stop searching if both categories found
-                        if not reject_case.empty and not edit_case.empty:
-                            break
+                    if edit_case is None:
+                        ec = df[df["GeoAction"] != "رفض"]
+                        if not ec.empty:
+                            edit_case = ec.sample(1)
 
-                # 3 — Final selection  
-                selected_rows = []
+                    # ✅ Stop early if both found
+                    if reject_case is not None and edit_case is not None:
+                        break
 
-                if not reject_case.empty:
-                    selected_rows.append(reject_case.sample(1))
-
-                if not edit_case.empty:
-                    selected_rows.append(edit_case.sample(1))
-
-                # If editor has neither category even after searching 14 days → skip
-                if not selected_rows:
+                # ❌ Skip editor only if NOTHING found
+                if reject_case is None and edit_case is None:
                     continue
 
-                # 4 — Format & assign supervisor
-                for row in selected_rows:
-                    row_dict = row.to_dict(orient="records")[0]
-                    row_dict['AssignedSupervisor'] = supervisors[i % len(supervisors)]
-                    row_dict['AssignmentDate'] = date.today()
-                    assignments.append(row_dict)
+                assigned_supervisor = supervisors[idx % len(supervisors)]
+
+                for case_df in [reject_case, edit_case]:
+                    if case_df is None:
+                        continue
+
+                    row = case_df.iloc[0].to_dict()
+                    row["AssignedSupervisor"] = assigned_supervisor
+                    row["AssignmentDate"] = date.today()
+                    assignments.append(row)
+
             if not assignments:
-                QtWidgets.QMessageBox.warning(None, "No Assignments", 
-                    "No cases could be assigned today.")
-                return None, day_back-1
+                QtWidgets.QMessageBox.warning(None, "No Assignments", "No cases could be assigned.")
+                return None, 0, 0
 
             assign_df = pd.DataFrame(assignments)
-            # Write to CaseAssignment
-            assign_df = assign_df[["UniqueKey","Case Number", "REN", "GEO S Completion", "Geo Supervisor", "Geo Supervisor Recommendation", "SupervisorName", "GroupID", "GeoAction",
-                    "Region", "AssignedSupervisor","AssignmentDate"]]
-            assign_df = assign_df.rename({"GEO S Completion":"CompletionDate", "Geo Supervisor":"EditorName", 
-                                        "Geo Supervisor Recommendation":"EditorRecommendation"}, axis=1)
-            assign_df[["UniqueKey","Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", "SupervisorName", "GroupID", "GeoAction",
-                    "Region", "AssignedSupervisor","AssignmentDate"]].to_sql("CaseAssignment", engine, schema='evaluation', if_exists="append", index=False)
-            
-            days_searched = target_date - min(dates_back) if dates_back else timedelta(0)
-            return assign_df, day_back, days_searched.days
+
+            assign_df = assign_df[[
+                "UniqueKey", "Case Number", "REN", "GEO S Completion",
+                "Geo Supervisor", "Geo Supervisor Recommendation",
+                "SupervisorName", "GroupID", "GeoAction",
+                "Region", "AssignedSupervisor", "AssignmentDate"
+            ]]
+
+            assign_df = assign_df.rename(columns={
+                "GEO S Completion": "CompletionDate",
+                "Geo Supervisor": "EditorName",
+                "Geo Supervisor Recommendation": "EditorRecommendation"
+            })
+
+            assign_df.to_sql(
+                "CaseAssignment",
+                engine,
+                schema="evaluation",
+                if_exists="append",
+                index=False
+            )
+
+            days_searched = (
+                max(dates_back_used) - min(dates_back_used)
+            ).days if dates_back_used else 0
+
+            return assign_df, max(len(dates_back_used), 1), days_searched
+
         except Exception as e:
-            QtWidgets.QMessageBox.warning(None, "Error during case assignment", 
-                f"{e}")
+            QtWidgets.QMessageBox.warning(
+                None,
+                "Error during case assignment",
+                str(e)
+            )
+            return None, 0, 0
+
         # return "",'',''
         
     # --------------------------
@@ -1002,11 +1004,14 @@ class MainWindow(QtWidgets.QWidget):
             SELECT COUNT(*) FROM evaluation."CaseAssignment"
             WHERE "AssignmentDate" = CURRENT_DATE
         """
-        count = pd.read_sql(check_sql, conn)
-
-        if count.empty:
+        count = pd.read_sql(check_sql, conn)['count'].iloc[0]
+        print(f"*/*/*/*/*/**/*//* {count}")
+        if count==0:
+            # print(f'{count} cases')
             self.check_unevaluateded_status()
+            # print("------No cases assigned today")
             if login_id in admin_users:
+                
                 assigned_df, days_back, days_searched = self.generate_daily_assignment()
                 if assigned_df is None:
                     return
@@ -1040,7 +1045,8 @@ class MainWindow(QtWidgets.QWidget):
                 # Row Coloring based on Evaluation Status
                 if self.preview_df.iloc[r]["IsEvaluated"]:
                     item.setBackground(QColor("#A1A1A1"))  # gray for evaluated
-                    item.setFlags(Qt.NoItemFlags)
+                    # item.setFlags(Qt.NoItemFlags)
+                    item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 else:
                     # Row coloring based on GeoAction
                     geo_action = str(self.preview_df.iloc[r]["GeoAction"])
@@ -1084,20 +1090,10 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.cases_df = cases_df
         self.index = row_index  # ✅ Fix: define index for navigation
         self.supervisor_name = supervisor_name
-
         self.setFont(QFont("Cairo", 9))
-        # self.setStyleSheet("""
-        #     QGroupBox { font-weight: bold; color: #444; border: 1px solid #ccc; border-radius: 6px; margin-top: 8px; }
-        #     QGroupBox::title { subcontrol-origin: margin; left: 10px; top: -4px; }
-        #     QLabel { color: #333; }
-        #     QPushButton {
-        #         background-color: #0A3556; color: white;
-        #         padding: 6px 12px; border-radius: 6px;
-        #     }
-        #     QPushButton:hover { background-color: #005a9e; }
-        # """)
-
         self.initUI()
+        self.allow_re_evaluation = False
+        self.prompted_cases = set() 
 
     def initUI(self):
         main_layout = QtWidgets.QVBoxLayout(self)
@@ -1238,8 +1234,8 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.comment_text = QtWidgets.QTextEdit()
         self.comment_text.setReadOnly(False)
         self.comment_text.setMaximumHeight(60)
-        # eval_layout.addWidget(comment, (len(fields) // 2) + 1, 0, 1, 2)
-        # eval_layout.addWidget(self.comment_text, len(fields)//2 + 2,0, 1, 4)
+        eval_layout.addWidget(comment, (len(fields) // 2) + 1, 0, 1, 2)
+        eval_layout.addWidget(self.comment_text, len(fields)//2 + 2,0, 1, 4)
                 
         # print(self.eval_fields)
         
@@ -1290,7 +1286,8 @@ class EvaluationWindow(QtWidgets.QDialog):
         btn_layout.addWidget(self.submit_btn)
 
         main_layout.addLayout(btn_layout)
-
+        # 🔑 Handle evaluated case prompt
+        self.handle_evaluated_case(case)
 
     # --- Navigation Functions ---
     def prev_case(self):
@@ -1305,51 +1302,47 @@ class EvaluationWindow(QtWidgets.QDialog):
 
     def load_case(self):
         case = self.cases_df.iloc[self.index]
+        
+        # 🔑 Handle evaluated case prompt
+        self.handle_evaluated_case(case)
 
-        # Update header
+        # Header
         self.header.setText(f"Case Evaluation - {case['Case Number']}")
-        if case.get("IsEvaluated", False):
-            self.header.setStyleSheet("font-size:14px; font-weight:bold; color:#824131; margin-bottom:6px;")
-        else:
-            self.header.setStyleSheet("font-size:14px; font-weight:bold; color:#0A3556; margin-bottom:6px;")
+        self.header.setStyleSheet(
+            "font-size:14px; font-weight:bold; margin-bottom:6px;"
+            + ("color:#824131;" if case.get("IsEvaluated") else "color:#0A3556;")
+        )
 
-
-        # Update info labels
+        # Case info
         for col_name, label_widget in self.info_labels.items():
             label_widget.setText(str(case.get(col_name, "")))
 
-        # Update recommendation
         self.recommendation_text.setText(str(case.get("EditorRecommendation", "")))
+        self.comment_text.clear()
 
-        # --- Update evaluation fields ---
+        # --- Evaluation fields ---
         options = ["Yes", "No"]
         technical_fields = ["Topology", "Completeness", "BlockAlignment"]
         fields = ["Procedure", "Recommendation", "Topology", "Completeness", "BlockAlignment"]
 
         for field in fields:
             dropdown = self.eval_fields[field]
-            if isinstance(dropdown, QtWidgets.QComboBox):
-                if case["IsEvaluated"]:
-                    dropdown.setCurrentIndex(0)        # Reset to empty
-                    dropdown.setEnabled(False)         # Disable editing
-                else:
-                    dropdown.setCurrentIndex(0)        # Reset to empty
-                    dropdown.setEnabled(True)          # Enable editing
-                    # Clear previous items
-                    dropdown.clear()
+            dropdown.blockSignals(True)
+            dropdown.clear()
 
-                    # Repopulate based on GeoAction
-                    if case['GeoAction'] == 'رفض' and field in technical_fields:
-                        dropdown.addItem("")  # only allow empty
-                    else:
-                        dropdown.addItems([""] + options)
-            
-            # # Optional: show a message if the case is already evaluated
-            # if case["IsEvaluated"]:
-            #     QtWidgets.QMessageBox.information(self, "Info", 
-            #         f"Case {case['Case Number']} has already been evaluated.")
-            # Reset selection
-            dropdown.setCurrentIndex(0)    
+            if case["GeoAction"] == "رفض" and field in technical_fields:
+                dropdown.addItem("")
+            else:
+                dropdown.addItems([""] + options)
+
+            # Enable / Disable logic
+            editable = (not case.get("IsEvaluated")) or self.allow_re_evaluation
+            dropdown.setEnabled(editable)
+            dropdown.setCurrentIndex(0)
+
+            dropdown.blockSignals(False)
+
+    
 
     def copy_case_number(self):
         """Copy the current case number to clipboard."""
@@ -1366,110 +1359,324 @@ class EvaluationWindow(QtWidgets.QDialog):
         QtWidgets.QMessageBox.information(self, "Copied", f"Case Number '{ren}' copied to clipboard!")
 
     # --- Submit Evaluation ---
+    # def submit_evaluation(self):
+    #     case = self.cases_df.iloc[self.index]
+
+    #     # 1️⃣ Extract dropdown choices
+    #     procedure     = self.eval_fields["Procedure"].currentText()
+    #     recommendation = self.eval_fields["Recommendation"].currentText()
+    #     topology      = self.eval_fields["Topology"].currentText()
+    #     completeness  = self.eval_fields["Completeness"].currentText()
+    #     blockalign    = self.eval_fields["BlockAlignment"].currentText()
+
+    #     # 2️⃣ Compute numeric scores
+    #     def score(value, weight):
+    #         return weight if value == "Yes" else 0
+
+    #     procedure_score       = score(procedure, 0.7)
+    #     recommendation_score  = score(recommendation, 0.3)
+        
+    #     # Handling invalid submissions
+    #     field_dict = {"Procedure": procedure, "Recommendation": recommendation, "Topology": topology, 
+    #                   "Completeness": completeness, "BlockAlignment": blockalign} 
+        
+    #     # Technical fields only counted if GeoAction != "رفض"
+    #     if case["GeoAction"] == "رفض":
+    #         check = ["Procedure", "Recommendation"]
+    #         null_fields = [i for i in check if field_dict[i] == ""]
+    #         if len(null_fields)>0:
+    #             message = ', '.join([i for i in null_fields])
+    #             QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
+    #                 f"Please complete all required fields before submitting. Missing input for {message}.")
+    #             return
+    #         topology_score = completeness_score = blockalign_score = None
+    #     else:
+    #         null_fields = [i for i in field_dict.keys() if field_dict[i] == ""]
+    #         if len(null_fields) >0:
+    #             message = ', '.join([i for i in null_fields])
+    #             QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
+    #                 f"Please complete all required fields before submitting. Missing input for {message}.")
+    #             return
+    #         topology_score     = score(topology, 0.25)
+    #         completeness_score = score(completeness, 0.5)
+    #         blockalign_score   = score(blockalign, 0.25)
+
+    #     # 3️⃣ Aggregated scores
+    #     procedural_accuracy = procedure_score + recommendation_score
+
+    #     if case["GeoAction"] == "رفض":
+    #         technical_accuracy = None
+    #     else:
+    #         technical_accuracy = (
+    #             topology_score + completeness_score + blockalign_score
+    #         )
+    #     if self.comment_text.toPlainText().strip() == "":
+    #         comments = None
+    #     else:
+    #         comments = self.comment_text.toPlainText().strip()
+    #     # 4️⃣ Build VALUES list in correct order
+    #     values = [
+    #         case["UniqueKey"],
+    #         case["Case Number"],
+    #         case.get("CompletionDate", None),
+    #         case.get("EditorRecommendation", None),
+    #         case.get("EditorName", None),
+    #         case.get("SupervisorName", None),
+    #         case.get("GroupID", None),
+    #         case.get("GeoAction", None),
+    #         procedure, procedure_score, recommendation, recommendation_score, topology, topology_score, completeness,
+    #         completeness_score, blockalign, blockalign_score, procedural_accuracy, technical_accuracy, self.supervisor_name, 
+    #         datetime.now().replace(microsecond=0), comments]
+
+    #     # 5️⃣ Insert into database
+    #     conn = get_connection()
+    #     evaluatedCases = pd.read_sql("""SELECT "UniqueKey" FROM evaluation."EvaluationTable" """, conn)
+        
+    #     if case['UniqueKey'] in evaluatedCases["UniqueKey"].values:
+    #         QtWidgets.QMessageBox.warning(self, "Duplicated Entry", f"Case {case['Case Number']} has already been evaluated.")
+        
+    #     else:
+    #         with conn.cursor() as cur:
+    #             cur.execute("""
+    #                 INSERT INTO evaluation."EvaluationTable"
+    #                 ("UniqueKey","Case Number","CompletionDate","EditorRecommendation", "EditorName","SupervisorName","GroupID","GeoAction",
+    #                 "Procedure","ProcedureScore","Recommendation","RecommendationScore", "Topology","TopologyScore","Completeness","CompletenessScore",
+    #                 "BlockAlignment","BlockAlignmentScore","ProceduralAccuracy", "TechnicalAccuracy","EvaluatedBy","EvaluationDate", "Comments")
+    #                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+    #                         %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, %s)
+    #             """, values)
+    #             conn.commit()
+    #         # Update EvaluationStatus On Assignment Table
+    #         update_sql = """
+    #             UPDATE evaluation."CaseAssignment"
+    #             SET "IsEvaluated" = TRUE
+    #             WHERE "UniqueKey" = %s
+    #             AND "AssignedSupervisor" = %s
+    #         """
+    #         with conn.cursor() as cur:
+    #             if replacement:
+    #                 assigned_supervisor = replacement
+                    
+    #             else:
+    #                 assigned_supervisor = self.supervisor_name
+                
+    #             cur.execute(update_sql, (case["UniqueKey"], assigned_supervisor))
+    #             conn.commit()
+
+    #         # self.remaining_label.setText(str(self.getRemainingCount()))
+            
+    #         conn.close()
+    #         QtWidgets.QMessageBox.information(self, "Success", "Evaluation submitted!")
+
+    def handle_evaluated_case(self, case):
+        """
+        Ask once per case whether re-evaluation is allowed
+        """
+        if not case.get("IsEvaluated", False):
+            self.allow_re_evaluation = True
+            return
+
+        case_key = case["UniqueKey"]
+
+        # if case_key in self.prompted_cases:
+        #     return  # already asked
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Case Already Evaluated",
+            f"Case {case['Case Number']} has already been evaluated.\n\n"
+            "Do you want to re-evaluate this case?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+
+        # self.prompted_cases.add(case_key)
+
+        if reply == QtWidgets.QMessageBox.Yes:
+            self.allow_re_evaluation = True
+        else:
+            self.allow_re_evaluation = False
+
+    
     def submit_evaluation(self):
         case = self.cases_df.iloc[self.index]
 
         # 1️⃣ Extract dropdown choices
-        procedure     = self.eval_fields["Procedure"].currentText()
+        procedure      = self.eval_fields["Procedure"].currentText()
         recommendation = self.eval_fields["Recommendation"].currentText()
-        topology      = self.eval_fields["Topology"].currentText()
-        completeness  = self.eval_fields["Completeness"].currentText()
-        blockalign    = self.eval_fields["BlockAlignment"].currentText()
+        topology       = self.eval_fields["Topology"].currentText()
+        completeness   = self.eval_fields["Completeness"].currentText()
+        blockalign     = self.eval_fields["BlockAlignment"].currentText()
 
-        # 2️⃣ Compute numeric scores
+        # 2️⃣ Scoring helper
         def score(value, weight):
             return weight if value == "Yes" else 0
 
-        procedure_score       = score(procedure, 0.7)
-        recommendation_score  = score(recommendation, 0.3)
-        
-        # Handling invalid submissions
-        field_dict = {"Procedure": procedure, "Recommendation": recommendation, "Topology": topology, 
-                      "Completeness": completeness, "BlockAlignment": blockalign} 
-        
-        # Technical fields only counted if GeoAction != "رفض"
+        procedure_score      = score(procedure, 0.7)
+        recommendation_score = score(recommendation, 0.3)
+
+        field_dict = {
+            "Procedure": procedure,
+            "Recommendation": recommendation,
+            "Topology": topology,
+            "Completeness": completeness,
+            "BlockAlignment": blockalign,
+        }
+
+        # Validation rules
         if case["GeoAction"] == "رفض":
-            check = ["Procedure", "Recommendation"]
-            null_fields = [i for i in check if field_dict[i] == ""]
-            if len(null_fields)>0:
-                message = ', '.join([i for i in null_fields])
-                QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
-                    f"Please complete all required fields before submitting. Missing input for {message}.")
+            required = ["Procedure", "Recommendation"]
+            missing = [k for k in required if field_dict[k] == ""]
+            if missing:
+                QtWidgets.QMessageBox.warning(
+                    self, "Incomplete Evaluation",
+                    f"Missing fields: {', '.join(missing)}"
+                )
                 return
             topology_score = completeness_score = blockalign_score = None
         else:
-            null_fields = [i for i in field_dict.keys() if field_dict[i] == ""]
-            if len(null_fields) >0:
-                message = ', '.join([i for i in null_fields])
-                QtWidgets.QMessageBox.warning(self, "Incomplete Evaluation", 
-                    f"Please complete all required fields before submitting. Missing input for {message}.")
+            missing = [k for k, v in field_dict.items() if v == ""]
+            if missing:
+                QtWidgets.QMessageBox.warning(
+                    self, "Incomplete Evaluation",
+                    f"Missing fields: {', '.join(missing)}"
+                )
                 return
             topology_score     = score(topology, 0.25)
             completeness_score = score(completeness, 0.5)
             blockalign_score   = score(blockalign, 0.25)
 
-        # 3️⃣ Aggregated scores
         procedural_accuracy = procedure_score + recommendation_score
+        technical_accuracy = None if case["GeoAction"] == "رفض" else (
+            topology_score + completeness_score + blockalign_score
+        )
 
-        if case["GeoAction"] == "رفض":
-            technical_accuracy = None
-        else:
-            technical_accuracy = (
-                topology_score + completeness_score + blockalign_score
+        comments = self.comment_text.toPlainText().strip() or None
+        evaluated_by = self.supervisor_name
+        evaluation_date = datetime.now().replace(microsecond=0)
+
+        conn = get_connection()
+
+        try:
+            with conn:
+                with conn.cursor() as cur:
+
+                    # 🔒 Lock evaluation row (prevents double submit)
+                    cur.execute("""
+                        SELECT 1
+                        FROM evaluation."EvaluationTable"
+                        WHERE "UniqueKey" = %s
+                        FOR UPDATE
+                    """, (case["UniqueKey"],))
+
+                    exists = cur.fetchone() is not None
+
+                    # 3️⃣ Re-evaluation prompt
+                    if exists:
+                    #     reply = QtWidgets.QMessageBox.question(
+                    #         self,
+                    #         "Case Already Evaluated",
+                    #         f"Case {case['Case Number']} was already evaluated.\n"
+                    #         "Do you want to re-evaluate it?",
+                    #         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+                    #     )
+
+                    #     if reply == QtWidgets.QMessageBox.Yes:
+                    #         self.allow_re_evaluation = True
+                    #     else:
+                    #         return
+
+                        # 🔁 UPDATE existing evaluation
+                        cur.execute("""
+                            UPDATE evaluation."EvaluationTable"
+                            SET
+                                "Procedure" = %s,
+                                "ProcedureScore" = %s,
+                                "Recommendation" = %s,
+                                "RecommendationScore" = %s,
+                                "Topology" = %s,
+                                "TopologyScore" = %s,
+                                "Completeness" = %s,
+                                "CompletenessScore" = %s,
+                                "BlockAlignment" = %s,
+                                "BlockAlignmentScore" = %s,
+                                "ProceduralAccuracy" = %s,
+                                "TechnicalAccuracy" = %s,
+                                "EvaluatedBy" = %s,
+                                "EvaluationDate" = %s,
+                                "Comments" = %s
+                            WHERE "UniqueKey" = %s
+                        """, (
+                            procedure, procedure_score,
+                            recommendation, recommendation_score,
+                            topology, topology_score,
+                            completeness, completeness_score,
+                            blockalign, blockalign_score,
+                            procedural_accuracy, technical_accuracy,
+                            evaluated_by, evaluation_date,
+                            comments,
+                            case["UniqueKey"]
+                        ))
+
+                    else:
+                        # 🆕 Insert new evaluation
+                        cur.execute("""
+                            INSERT INTO evaluation."EvaluationTable"
+                            ("UniqueKey","Case Number","CompletionDate",
+                            "EditorRecommendation","EditorName","SupervisorName",
+                            "GroupID","GeoAction",
+                            "Procedure","ProcedureScore",
+                            "Recommendation","RecommendationScore",
+                            "Topology","TopologyScore",
+                            "Completeness","CompletenessScore",
+                            "BlockAlignment","BlockAlignmentScore",
+                            "ProceduralAccuracy","TechnicalAccuracy",
+                            "EvaluatedBy","EvaluationDate","Comments")
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,
+                                    %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                                    %s,%s,%s,%s,%s)
+                        """, (
+                            case["UniqueKey"],
+                            case["Case Number"],
+                            case.get("CompletionDate"),
+                            case.get("EditorRecommendation"),
+                            case.get("EditorName"),
+                            case.get("SupervisorName"),
+                            case.get("GroupID"),
+                            case.get("GeoAction"),
+                            procedure, procedure_score,
+                            recommendation, recommendation_score,
+                            topology, topology_score,
+                            completeness, completeness_score,
+                            blockalign, blockalign_score,
+                            procedural_accuracy, technical_accuracy,
+                            evaluated_by, evaluation_date,
+                            comments
+                        ))
+
+                    # 4️⃣ Mark assignment evaluated
+                    assigned_supervisor = replacement if replacement else self.supervisor_name
+                    cur.execute("""
+                        UPDATE evaluation."CaseAssignment"
+                        SET "IsEvaluated" = TRUE
+                        WHERE "UniqueKey" = %s
+                        AND "AssignedSupervisor" = %s
+                    """, (case["UniqueKey"], assigned_supervisor))
+
+            QtWidgets.QMessageBox.information(
+                self, "Success",
+                "Evaluation submitted successfully."
             )
 
-        # 4️⃣ Build VALUES list in correct order
-        values = [
-            case["UniqueKey"],
-            case["Case Number"],
-            case.get("CompletionDate", None),
-            case.get("EditorRecommendation", None),
-            case.get("EditorName", None),
-            case.get("SupervisorName", None),
-            case.get("GroupID", None),
-            case.get("GeoAction", None),
-            procedure, procedure_score, recommendation, recommendation_score, topology, topology_score, completeness,
-            completeness_score, blockalign, blockalign_score, procedural_accuracy, technical_accuracy, self.supervisor_name, datetime.now().replace(microsecond=0)]
+        except Exception as e:
+            conn.rollback()
+            QtWidgets.QMessageBox.critical(
+                self, "Submission Failed",
+                f"An error occurred:\n{e}"
+            )
 
-        # 5️⃣ Insert into database
-        conn = get_connection()
-        evaluatedCases = pd.read_sql("""SELECT "UniqueKey" FROM evaluation."EvaluationTable" """, conn)
-        
-        if case['UniqueKey'] in evaluatedCases["UniqueKey"].values:
-            QtWidgets.QMessageBox.warning(self, "Duplicated Entry", f"Case {case['Case Number']} has already been evaluated.")
-        
-        else:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO evaluation."EvaluationTable"
-                    ("UniqueKey","Case Number","CompletionDate","EditorRecommendation", "EditorName","SupervisorName","GroupID","GeoAction",
-                    "Procedure","ProcedureScore","Recommendation","RecommendationScore", "Topology","TopologyScore","Completeness","CompletenessScore",
-                    "BlockAlignment","BlockAlignmentScore","ProceduralAccuracy", "TechnicalAccuracy","EvaluatedBy","EvaluationDate")
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                """, values)
-                conn.commit()
-            # Update EvaluationStatus On Assignment Table
-            update_sql = """
-                UPDATE evaluation."CaseAssignment"
-                SET "IsEvaluated" = TRUE
-                WHERE "UniqueKey" = %s
-                AND "AssignedSupervisor" = %s
-            """
-            with conn.cursor() as cur:
-                if replacement:
-                    assigned_supervisor = replacement
-                    
-                else:
-                    assigned_supervisor = self.supervisor_name
-                
-                cur.execute(update_sql, (case["UniqueKey"], assigned_supervisor))
-                conn.commit()
-
-            # self.remaining_label.setText(str(self.getRemainingCount()))
-            
+        finally:
             conn.close()
-            QtWidgets.QMessageBox.information(self, "Success", "Evaluation submitted!")
+
 
 class ReplacementManager(QtWidgets.QDialog):
     def __init__(self):
@@ -1542,7 +1749,8 @@ class ReplacementManager(QtWidgets.QDialog):
 class UpdateOpsData(QtWidgets.QDialog):
     def __init__(self, engine, parent=None):
         super().__init__(parent)
-        self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@10.150.40.74:5432/GRS")
+        # self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@10.150.40.74:5432/GRS")
+        self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@127.0.0.1:5432/GSA")
 
         self.setWindowTitle("Update Ops Data")
         self.setMinimumWidth(400)
@@ -1650,13 +1858,13 @@ class UpdateOpsData(QtWidgets.QDialog):
         print("Loading Editors' List")
         try:
             # engine = create_engine("postgresql://app_user:app1234@10.150.40.74:5432/GSA")
-            engine2 = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
-            editors_list = pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine2)
+            engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
+            editors_list = pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine)
             editors_list = convert_to_date(editors_list)
             print("Successfully Loaded Editors' List ✅")
             return editors_list
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to load userlist:\n{e}")
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load userlist:\n{e}")
             return None
 
     def join_editors_list(self, ops_df, editorsList):
@@ -1726,72 +1934,7 @@ class UpdateOpsData(QtWidgets.QDialog):
             return
         self.update_status("⬆️ Updating database...")
         self.replace_opsdata(df_joined)
-        
-# ------------------
-# THEME Manager
-# ------------------
-# class ThemeManager:
-#     is_dark = False
-
-#     @staticmethod
-#     def set_theme(is_dark: bool):
-#         ThemeManager.is_dark = is_dark
-#         ThemeManager.apply_theme()
-
-#     @staticmethod
-#     def toggle_theme():
-#         # Flip the current theme
-#         ThemeManager.is_dark = not ThemeManager.is_dark
-#         # Apply the new theme to the app
-#         ThemeManager.apply_theme()
-
-#     @staticmethod
-#     def fix_input_text_color():
-#         palette = QtWidgets.QApplication.palette()
-
-#         for w in QtWidgets.QApplication.allWidgets():
-#             if isinstance(w, (QtWidgets.QLineEdit,
-#                             QtWidgets.QComboBox,
-#                             QtWidgets.QSpinBox,
-#                             QtWidgets.QDoubleSpinBox,
-#                             QtWidgets.QDateEdit,
-#                             QtWidgets.QDateTimeEdit,
-#                             QtWidgets.QTextEdit,
-#                             QtWidgets.QPlainTextEdit)):
-
-#                 w.setPalette(palette)
-
-#     @staticmethod
-#     def apply_theme():
-#         if ThemeManager.is_dark:
-#             bg = QtGui.QColor(45, 45, 45)
-#             fg = QtGui.QColor(240, 240, 240)
-#             base = QtGui.QColor(60, 60, 60)
-#         else:
-#             bg = QtGui.QColor(240, 240, 240)
-#             fg = QtGui.QColor(0, 0, 0)
-#             base = QtGui.QColor(255, 255, 255)
-
-#         palette = QtGui.QPalette()
-#         palette.setColor(QtGui.QPalette.Window, bg)
-#         palette.setColor(QtGui.QPalette.WindowText, fg)
-#         palette.setColor(QtGui.QPalette.Base, base)
-#         palette.setColor(QtGui.QPalette.AlternateBase, bg)
-#         palette.setColor(QtGui.QPalette.Text, fg)
-#         palette.setColor(QtGui.QPalette.Button, bg)
-#         palette.setColor(QtGui.QPalette.ButtonText, fg)
-#         palette.setColor(QtGui.QPalette.PlaceholderText, fg)
-#         palette.setColor(QtGui.QPalette.ToolTipText, fg)
-#         palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(53, 132, 228))
-#         palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(255, 255, 255))
-
-#         QtWidgets.QApplication.setPalette(palette)
-
-#         ThemeManager.fix_input_text_color()
-        
-
-# from PyQt5 import QtWidgets, QtGui
-
+ 
 class ThemeManager:
     is_dark = False
 
@@ -1977,288 +2120,287 @@ class ThemeManager:
 # ----------------------------
 # Statistics Tab
 # ----------------------------
-class StatisticsTab(QtWidgets.QWidget):
-    def __init__(self, login_id, admin_users):
-        super().__init__()
-        self.login_id = login_id
-        self.admin_users = admin_users
-        self.init_ui()
+# class StatisticsTab(QtWidgets.QWidget):
+#     def __init__(self, login_id, admin_users):
+#         super().__init__()
+#         self.login_id = login_id
+#         self.admin_users = admin_users
+#         self.init_ui()
 
-    def init_ui(self):
-        layout = QtWidgets.QVBoxLayout(self)
+#     def init_ui(self):
+#         layout = QtWidgets.QVBoxLayout(self)
 
-        title = QtWidgets.QLabel("📊 Statistics Overview")
-        title.setFont(QFont("Cairo", 12, QFont.Bold))
-        layout.addWidget(title)
+#         title = QtWidgets.QLabel("📊 Statistics Overview")
+#         title.setFont(QFont("Cairo", 12, QFont.Bold))
+#         layout.addWidget(title)
 
-        # =========================
-        # KPI ROW
-        # =========================
-        kpi_layout = QtWidgets.QHBoxLayout()
+#         # =========================
+#         # KPI ROW
+#         # =========================
+#         kpi_layout = QtWidgets.QHBoxLayout()
 
-        self.lbl_total = QtWidgets.QLabel()
-        self.lbl_eval = QtWidgets.QLabel()
-        self.lbl_remaining = QtWidgets.QLabel()
-        self.lbl_rejected = QtWidgets.QLabel()
+#         self.lbl_total = QtWidgets.QLabel()
+#         self.lbl_eval = QtWidgets.QLabel()
+#         self.lbl_remaining = QtWidgets.QLabel()
+#         self.lbl_rejected = QtWidgets.QLabel()
 
-        kpi_cards = [self.lbl_total, self.lbl_eval, self.lbl_remaining, self.lbl_rejected]
-        colors = ['#0A3556', '#367580', '#BC9975', '#824131', '#A1A1A1', '#E6EDF4']
-        for i in range(len(kpi_cards)):
-            lbl = kpi_cards[i]
-            color = colors[i]
-            print(f"Color ID: {color}")
-            lbl.setAlignment(Qt.AlignCenter)
-            lbl.setStyleSheet(f"""
-                QLabel {{
-                    background-color: {color};
-                    color: #ffffff;
-                    font-size: 16px;
-                    font-weight: bold;
-                    padding: 12px;
-                    border: 1px solid #ccc;
-                    border-radius: 10px;
-                }}
-                """)
-            kpi_layout.addWidget(lbl)
-        # self.lbl_total.setStyleSheet("""
-        #     QLabel {
+#         kpi_cards = [self.lbl_total, self.lbl_eval, self.lbl_remaining, self.lbl_rejected]
+#         colors = ['#0A3556', '#367580', '#BC9975', '#824131', '#A1A1A1', '#E6EDF4']
+#         for i in range(len(kpi_cards)):
+#             lbl = kpi_cards[i]
+#             color = colors[i]
+#             print(f"Color ID: {color}")
+#             lbl.setAlignment(Qt.AlignCenter)
+#             lbl.setStyleSheet(f"""
+#                 QLabel {{
+#                     background-color: {color};
+#                     color: #ffffff;
+#                     font-size: 16px;
+#                     font-weight: bold;
+#                     padding: 12px;
+#                     border: 1px solid #ccc;
+#                     border-radius: 10px;
+#                 }}
+#                 """)
+#             kpi_layout.addWidget(lbl)
+#         # self.lbl_total.setStyleSheet("""
+#         #     QLabel {
             
-        #     }""")
+#         #     }""")
 
-        layout.addLayout(kpi_layout)
+#         layout.addLayout(kpi_layout)
 
-        # =========================
-        # GEOACTION BAR CHART (PLOTLY)
-        # =========================
-        layout.addWidget(QtWidgets.QLabel("Breakdown of Evaluated Cases"))
+#         # =========================
+#         # GEOACTION BAR CHART (PLOTLY)
+#         # =========================
+#         layout.addWidget(QtWidgets.QLabel("Breakdown of Evaluated Cases"))
 
-        self.geo_view = QWebEngineView()
-        self.geo_view.setFixedHeight(250)
-        layout.addWidget(self.geo_view)
+#         self.geo_view = QWebEngineView()
+#         self.geo_view.setFixedHeight(250)
+#         layout.addWidget(self.geo_view)
 
-        # =========================
-        # SUPERVISOR PERFORMANCE (PLOTLY)
-        # =========================
-        layout.addWidget(QtWidgets.QLabel("Supervisor's Performance"))
+#         # =========================
+#         # SUPERVISOR PERFORMANCE (PLOTLY)
+#         # =========================
+#         layout.addWidget(QtWidgets.QLabel("Supervisor's Performance"))
 
-        self.sup_view = QWebEngineView()
-        self.sup_view.setMinimumHeight(250)
-        layout.addWidget(self.sup_view)
+#         self.sup_view = QWebEngineView()
+#         self.sup_view.setMinimumHeight(250)
+#         layout.addWidget(self.sup_view)
 
 
-        # # =========================
-        # # EDITOR TABLE
-        # # =========================
-        # layout.addWidget(QtWidgets.QLabel("Evaluation Breakdown By Editor"))
-        # self.editor_table = QtWidgets.QTableWidget()
-        # layout.addWidget(self.editor_table)
+#         # # =========================
+#         # # EDITOR TABLE
+#         # # =========================
+#         # layout.addWidget(QtWidgets.QLabel("Evaluation Breakdown By Editor"))
+#         # self.editor_table = QtWidgets.QTableWidget()
+#         # layout.addWidget(self.editor_table)
 
-        # =========================
-        # REFRESH
-        # =========================
-        refresh_btn = QtWidgets.QPushButton("🔄 Refresh Statistics")
-        refresh_btn.clicked.connect(self.load_stats)
-        layout.addWidget(refresh_btn)
+#         # =========================
+#         # REFRESH
+#         # =========================
+#         refresh_btn = QtWidgets.QPushButton("🔄 Refresh Statistics")
+#         refresh_btn.clicked.connect(self.load_stats)
+#         layout.addWidget(refresh_btn)
 
-        self.load_stats()
+#         self.load_stats()
 
-    ### Bar chart by GeoAction
-    def draw_geoaction_plotly(self, df):
-        fig = go.Figure()
+#     ### Bar chart by GeoAction
+#     def draw_geoaction_plotly(self, df):
+#         fig = go.Figure()
 
-        if df.empty:
-            fig.add_annotation(
-                text="No Data",
-                x=0.5, y=0.5, showarrow=False
-            )
-        else:
-            fig.add_bar(
-                x=df["GeoAction"],
-                y=df["count"],
-                marker_color="#367580"
-            )
-        # fig.update_layout()
-        fig.update_layout(
-        #     title="Breakdown By GeoAction",
-        #     font=dict(family="Cairo"),
-            margin=dict(l=30, r=30, t=20, b=20),
-            height=250
-        )
+#         if df.empty:
+#             fig.add_annotation(
+#                 text="No Data",
+#                 x=0.5, y=0.5, showarrow=False
+#             )
+#         else:
+#             fig.add_bar(
+#                 x=df["GeoAction"],
+#                 y=df["count"],
+#                 marker_color="#367580"
+#             )
+#         # fig.update_layout()
+#         fig.update_layout(
+#         #     title="Breakdown By GeoAction",
+#         #     font=dict(family="Cairo"),
+#             margin=dict(l=30, r=30, t=20, b=20),
+#             height=250
+#         )
 
-        html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
-        self.geo_view.setHtml(html)
+#         html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
+#         self.geo_view.setHtml(html)
 
-    ### Bar chart By Supervisor
-    def draw_supervisor_plotly(self, df):
-        if df.empty:
-            self.sup_view.setHtml("<h3 style='text-align:center'>لا توجد بيانات</h3>")
-            return
+#     ### Bar chart By Supervisor
+#     def draw_supervisor_plotly(self, df):
+#         if df.empty:
+#             self.sup_view.setHtml("<h3 style='text-align:center'>لا توجد بيانات</h3>")
+#             return
 
-        fig = go.Figure()
+#         fig = go.Figure()
 
-        fig.add_bar(
-            x=df["AssignedSupervisor"],
-            y=df["evaluated"],
-            name="Evaluated",
-            marker_color="#367580"
-        )
+#         fig.add_bar(
+#             x=df["AssignedSupervisor"],
+#             y=df["evaluated"],
+#             name="Evaluated",
+#             marker_color="#367580"
+#         )
 
-        fig.add_bar(
-            x=df["AssignedSupervisor"],
-            y=df["remaining"],
-            name="Remaining",
-            marker_color="#824131"
-        )
+#         fig.add_bar(
+#             x=df["AssignedSupervisor"],
+#             y=df["remaining"],
+#             name="Remaining",
+#             marker_color="#824131"
+#         )
 
-        fig.update_layout(
-            barmode="stack",
-            # title="حالة التقييم حسب المشرف",
-            xaxis_title="Supervisor",
-            yaxis_title="Count",
-            font=dict(family="Cairo", size=12),
-            xaxis=dict(
-                tickangle=-35,
-                tickfont=dict(size=10)
-            ),
-            legend=dict(orientation="h", y=-0.25),
-            margin=dict(l=30, r=30, t=20, b=20),
-            height=300
-        )
+#         fig.update_layout(
+#             barmode="stack",
+#             # title="حالة التقييم حسب المشرف",
+#             xaxis_title="Supervisor",
+#             yaxis_title="Count",
+#             font=dict(family="Cairo", size=12),
+#             xaxis=dict(
+#                 tickangle=-35,
+#                 tickfont=dict(size=10)
+#             ),
+#             legend=dict(orientation="h", y=-0.25),
+#             margin=dict(l=30, r=30, t=20, b=20),
+#             height=300
+#         )
 
-        html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
-        self.sup_view.setHtml(html)
+#         html = pio.to_html(fig, include_plotlyjs='cdn', full_html=False)
+#         self.sup_view.setHtml(html)
 
-    # ==================================================
-    # LOAD STATISTICS
-    # ==================================================
-    def load_stats(self):
-        conn = get_connection()
+#     # ==================================================
+#     # LOAD STATISTICS
+#     # ==================================================
+#     def load_stats(self):
+#         conn = get_connection()
 
-        # -------------------------
-        # Admin vs Supervisor
-        # -------------------------
-        where_clause = ""
-        params = []
+#         # -------------------------
+#         # Admin vs Supervisor
+#         # -------------------------
+#         where_clause = ""
+#         params = []
 
-        if self.login_id not in self.admin_users:
-            where_clause = 'AND "AssignedSupervisor" = %s'
-            if replacement:
-                params.append(replacement)
-            else:
-                params.append(supervisorName)
+#         if self.login_id not in self.admin_users:
+#             where_clause = 'AND "AssignedSupervisor" = %s'
+#             if replacement:
+#                 params.append(replacement)
+#             else:
+#                 params.append(supervisorName)
             
 
-        # -------------------------
-        # KPIs
-        # -------------------------
-        total = pd.read_sql(
-            f'''SELECT COUNT(*) FROM evaluation."CaseAssignment" 
-            WHERE "IsRetired" = FALSE
-            {where_clause}''',
-            conn, params=params
-        ).iloc[0, 0]
+#         # -------------------------
+#         # KPIs
+#         # -------------------------
+#         total = pd.read_sql(
+#             f'''SELECT COUNT(*) FROM evaluation."CaseAssignment" 
+#             WHERE "IsRetired" = FALSE
+#             {where_clause}''',
+#             conn, params=params
+#         ).iloc[0, 0]
 
-        evaluated = pd.read_sql(
-            f'''SELECT COUNT(*) FROM evaluation."CaseAssignment"
-                WHERE "IsEvaluated" = TRUE
-                AND "IsRetired" = FALSE
-                {where_clause}''',
-            conn, params=params
-        ).iloc[0, 0]
+#         evaluated = pd.read_sql(
+#             f'''SELECT COUNT(*) FROM evaluation."CaseAssignment"
+#                 WHERE "IsEvaluated" = TRUE
+#                 AND "IsRetired" = FALSE
+#                 {where_clause}''',
+#             conn, params=params
+#         ).iloc[0, 0]
 
-        rejected = pd.read_sql(
-            f'''SELECT COUNT(*) FROM evaluation."CaseAssignment"
-                WHERE "GeoAction" = 'رفض'
-                AND "IsRetired" = FALSE
-                {where_clause}''',
-            conn, params=params
-        ).iloc[0, 0]
+#         rejected = pd.read_sql(
+#             f'''SELECT COUNT(*) FROM evaluation."CaseAssignment"
+#                 WHERE "GeoAction" = 'رفض'
+#                 AND "IsRetired" = FALSE
+#                 {where_clause}''',
+#             conn, params=params
+#         ).iloc[0, 0]
 
-        remaining = total - evaluated
+#         remaining = total - evaluated
 
-        self.lbl_total.setText(f"Total Assigned\n{total}")
-        self.lbl_eval.setText(f"Evaluated\n{evaluated}")
-        self.lbl_remaining.setText(f"Remaining\n{remaining}")
-        self.lbl_rejected.setText(f"Rejected\n{rejected}")
+#         self.lbl_total.setText(f"Total Assigned\n{total}")
+#         self.lbl_eval.setText(f"Evaluated\n{evaluated}")
+#         self.lbl_remaining.setText(f"Remaining\n{remaining}")
+#         self.lbl_rejected.setText(f"Rejected\n{rejected}")
 
-        # -------------------------
-        # GEOACTION BREAKDOWN
-        # -------------------------
-        geo_sql = f'''
-            SELECT "GeoAction", COUNT(*) AS count
-            FROM evaluation."CaseAssignment"
-            WHERE "IsRetired" = FALSE
-            {where_clause}
-            GROUP BY "GeoAction"
-            ORDER BY count DESC
-        '''
-        geo_df = pd.read_sql(geo_sql, conn, params=params)
-        # self.populate_table(self.geo_table, geo_df)
-        # self.draw_geoaction_chart(geo_df)
-        self.draw_geoaction_plotly(geo_df)
+#         # -------------------------
+#         # GEOACTION BREAKDOWN
+#         # -------------------------
+#         geo_sql = f'''
+#             SELECT "GeoAction", COUNT(*) AS count
+#             FROM evaluation."CaseAssignment"
+#             WHERE "IsRetired" = FALSE
+#             {where_clause}
+#             GROUP BY "GeoAction"
+#             ORDER BY count DESC
+#         '''
+#         geo_df = pd.read_sql(geo_sql, conn, params=params)
+#         # self.populate_table(self.geo_table, geo_df)
+#         # self.draw_geoaction_chart(geo_df)
+#         self.draw_geoaction_plotly(geo_df)
 
-        # -------------------------
-        # SUPERVISOR EVALUATION STATUS
-        # -------------------------
-        sup_sql = f'''
-            SELECT
-                "AssignedSupervisor",
-                SUM(CASE WHEN "IsEvaluated" THEN 1 ELSE 0 END) AS evaluated,
-                SUM(CASE WHEN NOT "IsEvaluated" THEN 1 ELSE 0 END) AS remaining
-            FROM evaluation."CaseAssignment"
-            WHERE "IsRetired" = FALSE
-            {where_clause}
-            GROUP BY "AssignedSupervisor"
-            ORDER BY "AssignedSupervisor"
-        '''
-        sup_df = pd.read_sql(sup_sql, conn, params=params)
-        # self.draw_supervisor_chart(sup_df)
-        self.draw_supervisor_plotly(sup_df)
+#         # -------------------------
+#         # SUPERVISOR EVALUATION STATUS
+#         # -------------------------
+#         sup_sql = f'''
+#             SELECT
+#                 "AssignedSupervisor",
+#                 SUM(CASE WHEN "IsEvaluated" THEN 1 ELSE 0 END) AS evaluated,
+#                 SUM(CASE WHEN NOT "IsEvaluated" THEN 1 ELSE 0 END) AS remaining
+#             FROM evaluation."CaseAssignment"
+#             WHERE "IsRetired" = FALSE
+#             {where_clause}
+#             GROUP BY "AssignedSupervisor"
+#             ORDER BY "AssignedSupervisor"
+#         '''
+#         sup_df = pd.read_sql(sup_sql, conn, params=params)
+#         # self.draw_supervisor_chart(sup_df)
+#         self.draw_supervisor_plotly(sup_df)
 
-        # -------------------------
-        # EDITOR PERFORMANCE
-        # -------------------------
-        editor_sql = f'''
-            SELECT
-                "EditorName",
-                COUNT(*) AS assigned,
-                SUM(CASE WHEN "IsEvaluated" THEN 1 ELSE 0 END) AS evaluated
-            FROM evaluation."CaseAssignment"
-            WHERE "IsRetired" = FALSE
-            {where_clause}
-            GROUP BY "EditorName"
-            ORDER BY assigned DESC
-        '''
-        editor_df = pd.read_sql(editor_sql, conn, params=params)
+#         # -------------------------
+#         # EDITOR PERFORMANCE
+#         # -------------------------
+#         editor_sql = f'''
+#             SELECT
+#                 "EditorName",
+#                 COUNT(*) AS assigned,
+#                 SUM(CASE WHEN "IsEvaluated" THEN 1 ELSE 0 END) AS evaluated
+#             FROM evaluation."CaseAssignment"
+#             WHERE "IsRetired" = FALSE
+#             {where_clause}
+#             GROUP BY "EditorName"
+#             ORDER BY assigned DESC
+#         '''
+#         editor_df = pd.read_sql(editor_sql, conn, params=params)
 
-        if not editor_df.empty:
-            editor_df["Completion %"] = (
-                (editor_df["evaluated"] / editor_df["assigned"]) * 100
-            ).round(1)
+#         if not editor_df.empty:
+#             editor_df["Completion %"] = (
+#                 (editor_df["evaluated"] / editor_df["assigned"]) * 100
+#             ).round(1)
 
-        # self.populate_table(self.editor_table, editor_df)
+#         # self.populate_table(self.editor_table, editor_df)
 
-        conn.close()
+#         conn.close()
 
-    # ==================================================
-    # TABLE HELPER
-    # ==================================================
-    def populate_table(self, table, df):
-        table.clear()
-        table.setRowCount(len(df))
-        table.setColumnCount(len(df.columns))
-        table.setHorizontalHeaderLabels(df.columns)
+#     # ==================================================
+#     # TABLE HELPER
+#     # ==================================================
+#     def populate_table(self, table, df):
+#         table.clear()
+#         table.setRowCount(len(df))
+#         table.setColumnCount(len(df.columns))
+#         table.setHorizontalHeaderLabels(df.columns)
 
-        for r in range(len(df)):
-            for c, col in enumerate(df.columns):
-                item = QtWidgets.QTableWidgetItem(str(df.iloc[r, c]))
-                item.setFlags(item.flags() ^ Qt.ItemIsEditable)
-                table.setItem(r, c, item)
+#         for r in range(len(df)):
+#             for c, col in enumerate(df.columns):
+#                 item = QtWidgets.QTableWidgetItem(str(df.iloc[r, c]))
+#                 item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+#                 table.setItem(r, c, item)
 
-        table.resizeColumnsToContents()
-        table.setAlternatingRowColors(True)
- 
-        
+#         table.resizeColumnsToContents()
+#         table.setAlternatingRowColors(True)
+    
 
 # ----------------------------
 # Main
@@ -2270,15 +2412,10 @@ if __name__ == "__main__":
     from PyQt5.QtWebEngine import QtWebEngine
     import plotly.graph_objects as go
     import plotly.io as pio
+    from PyQt5.QtWebEngine import QtWebEngine
+    QtWebEngine.initialize()
     app = QtWidgets.QApplication(sys.argv)
-    # if supervisorName is None:
-        
-    #     QtWidgets.QMessageBox.critical(
-    #         None,
-    #         "Access Denied",
-    #         f"Your login ID '{login_id}' is not registered as a supervisor."
-    #     )
-    #     sys.exit()  # block app launch
+
     replacement = get_replacement_supervisor(login_id)
     print(f'------------------{replacement}, {is_allowed_user(login_id)}, {supervisorName}')
     if not is_allowed_user(login_id) and not replacement:
@@ -2286,28 +2423,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     # Load saved theme
-    # dark = load_theme_setting()
     ThemeManager.set_theme(True)
     ThemeManager.toggle_theme()
-    from PyQt5.QtWebEngine import QtWebEngine
-    QtWebEngine.initialize()
-
-    # w = QWidget()
-    # layout = QVBoxLayout(w)
-
-    # view = QWebEngineView()
-    # layout.addWidget(view)
-
-    # fig = go.Figure()
-    # fig.add_bar(x=["رفض", "موافقة", "إجراء آخر"], y=[10, 5, 7])
-
-    # html = pio.to_html(fig, full_html=True)
-    # view.setHtml(html)
-
-    # w.resize(600, 400)
-    # w.show()
-
-
+    
     # ThemeManager.apply_theme(app)
     window = MainWindow()
     window.show()
