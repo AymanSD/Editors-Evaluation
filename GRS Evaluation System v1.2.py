@@ -47,7 +47,7 @@ excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 login_id = sup_ids[6].lower().strip()
 # login_id = admin_users[6].lower().strip()
-# login_id =  "Aaltoum".lower().strip()
+login_id =  "Aaltoum".lower().strip()
 
 # ----------------------------
 # Helper function for DB connection
@@ -500,6 +500,21 @@ class MainWindow(QtWidgets.QWidget):
         sidebar_layout.addLayout(fil_btn_layout)
         sidebar_layout.addStretch()
 
+        self.assign_btn = QtWidgets.QPushButton("Assign Cases")
+        self.assign_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0A3556;
+                color: white;
+                padding: 6px;
+                border-radius: 6px;
+                font-weight: 400;
+                font-size: 12px;
+                width: 30%;
+            }
+            QPushButton:hover { background-color: #a1503e; }
+        """)
+        self.assign_btn.clicked.connect(lambda: AssignCasesDialog().exec_())
+
         self.update_btn = QtWidgets.QPushButton("Update Ops Data")
         self.update_btn.setStyleSheet("""
             QPushButton {
@@ -530,6 +545,7 @@ class MainWindow(QtWidgets.QWidget):
         """)
         self.replacement_btn.clicked.connect(lambda: ReplacementManager().exec_())
         if login_id in admin_users:
+            sidebar_layout.addWidget(self.assign_btn)
             sidebar_layout.addWidget(self.update_btn)
             sidebar_layout.addWidget(self.replacement_btn)
 
@@ -1076,6 +1092,7 @@ class MainWindow(QtWidgets.QWidget):
         eval_window = EvaluationWindow(self.cases_df, row, self.sup_input.text().strip())
         ThemeManager.apply_theme()
         eval_window.exec_()
+    
 
 # ----------------------------
 # Evaluation Window
@@ -2116,6 +2133,194 @@ class ThemeManager:
 
         # Process events to force redraw
         QtWidgets.QApplication.processEvents()
+
+class AssignCasesDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Assign Cases (Admin)")
+        self.resize(900, 500)
+
+        self.conn = get_connection()
+
+        # --- Widgets ---
+        self.editor_combo = QtWidgets.QComboBox()
+        self.btn_load = QtWidgets.QPushButton("Load Cases")
+
+        self.table = QtWidgets.QTableWidget()
+        self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+
+        self.supervisor_list = QtWidgets.QListWidget()
+        self.supervisor_list.setSelectionMode(QtWidgets.QAbstractItemView.MultiSelection)
+
+        self.btn_assign = QtWidgets.QPushButton("Assign Selected Cases")
+
+        # --- Layout ---
+        top = QtWidgets.QHBoxLayout()
+        top.addWidget(QtWidgets.QLabel("Editor:"))
+        top.addWidget(self.editor_combo)
+        top.addWidget(self.btn_load)
+
+        right = QtWidgets.QVBoxLayout()
+        right.addWidget(QtWidgets.QLabel("Assign to Supervisor(s):"))
+        right.addWidget(self.supervisor_list)
+        right.addWidget(self.btn_assign)
+
+        main = QtWidgets.QHBoxLayout()
+        main.addWidget(self.table, 3)
+        main.addLayout(right, 1)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addLayout(top)
+        layout.addLayout(main)
+
+        # --- Signals ---
+        self.btn_load.clicked.connect(self.load_cases)
+        self.btn_assign.clicked.connect(self.assign_cases)
+
+        self.load_editors()
+        self.load_supervisors()
+
+    # -------------------------------------------------------
+    # Load Editors
+    # -------------------------------------------------------
+    def load_editors(self):
+        df = pd.read_sql("""
+            SELECT DISTINCT "CasePortalName"
+            FROM evaluation."EditorsList"
+            WHERE "CasePortalName" IS NOT NULL
+            AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
+                    'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
+        """, self.conn)
+
+        self.editor_combo.addItems(sorted(df["CasePortalName"].tolist()))
+
+    # -------------------------------------------------------
+    # Load Supervisors
+    # -------------------------------------------------------
+    def load_supervisors(self):
+        # df = pd.read_sql("""
+        #     SELECT DISTINCT "SupervisorName"
+        #     FROM evaluation."EditorsList"
+        #     WHERE "SupervisorName" IS NOT NULL
+        # """, self.conn)
+
+        # for s in current_supervisors:
+        self.supervisor_list.addItems(current_supervisors)
+
+    # -------------------------------------------------------
+    # Load Available Cases
+    # -------------------------------------------------------
+    def load_cases(self):
+        editor = self.editor_combo.currentText()
+
+        sql = """
+            SELECT "UniqueKey","Case Number", "REN", "GEO S Completion","Geo Supervisor",
+                "Geo Supervisor Recommendation", "SupervisorName","GroupID","GeoAction", "Region"
+            FROM evaluation."OpsData"
+            WHERE "Geo Supervisor" = %s
+              AND "UniqueKey" NOT IN (
+                    SELECT "UniqueKey" FROM evaluation."EvaluationTable"
+                    UNION
+                    SELECT "UniqueKey" FROM evaluation."CaseAssignment"
+              )
+        """
+
+        self.df = pd.read_sql(sql, self.conn, params=[editor])
+
+        if self.df.empty:
+            QtWidgets.QMessageBox.information(self, "No Cases", "No available cases for this editor.")
+            return
+        self.df["REN"] = self.df["REN"].astype(str)
+        self.df = self.df.sort_values(by="GEO S Completion", ascending=False)
+        self.populate_table()
+
+    # -------------------------------------------------------
+    # Populate Table (GeoAction Editable)
+    # -------------------------------------------------------
+    def populate_table(self):
+        self.table.clear()
+        self.table.setRowCount(len(self.df))
+        self.table.setColumnCount(len(self.df.columns))
+        self.table.setHorizontalHeaderLabels(self.df.columns)
+
+        geoaction_col = self.df.columns.get_loc("GeoAction")
+        actions = [""] + pd.read_sql('SELECT DISTINCT "GeoAction" FROM evaluation."OpsData"', self.conn)["GeoAction"].tolist()
+
+        for r in range(len(self.df)):
+            for c, col in enumerate(self.df.columns):
+                if c == geoaction_col:
+                    combo = QtWidgets.QComboBox()
+                    combo.addItems(actions)
+                    combo.setCurrentText(str(self.df.iat[r, c]))
+                    self.table.setCellWidget(r, c, combo)
+                else:
+                    item = QtWidgets.QTableWidgetItem(str(self.df.iat[r, c]))
+                    item.setFlags(item.flags() ^ Qt.ItemIsEditable)
+                    self.table.setItem(r, c, item)
+
+        self.table.resizeColumnsToContents()
+
+    # -------------------------------------------------------
+    # Assign Selected Cases
+    # -------------------------------------------------------
+    def assign_cases(self):
+        rows = set(i.row() for i in self.table.selectedIndexes())
+        supervisors = [i.text() for i in self.supervisor_list.selectedItems()]
+
+        if not rows or not supervisors:
+            QtWidgets.QMessageBox.warning(self, "Missing Selection",
+                "Please select cases and at least one supervisor.")
+            return
+
+        try:
+            with self.conn:
+                with self.conn.cursor() as cur:
+                    for idx, r in enumerate(rows):
+                        row = self.df.iloc[r]
+                        geoaction_widget = self.table.cellWidget(
+                            r, self.df.columns.get_loc("GeoAction")
+                        )
+                        new_geoaction = geoaction_widget.currentText()
+
+                        supervisor = supervisors[idx % len(supervisors)]
+
+                        # Update GeoAction
+                        cur.execute("""
+                            UPDATE evaluation."OpsData"
+                            SET "GeoAction" = %s
+                            WHERE "UniqueKey" = %s
+                        """, (new_geoaction, row["UniqueKey"]))
+
+                        # Insert Assignment
+                        cur.execute("""
+                            INSERT INTO evaluation."CaseAssignment"
+                            ("UniqueKey","Case Number","REN","CompletionDate","EditorName", "EditorRecommendation",
+                             "SupervisorName","GroupID","GeoAction","Region",
+                             "AssignedSupervisor","AssignmentDate")
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        """, (
+                            row["UniqueKey"],
+                            row["Case Number"],
+                            row["REN"],
+                            row["GEO S Completion"],
+                            row["Geo Supervisor"],
+                            row["Geo Supervisor Recommendation"],
+                            row["SupervisorName"],
+                            row["GroupID"],
+                            new_geoaction,
+                            row["Region"],
+                            supervisor,
+                            date.today()
+                        ))
+
+            QtWidgets.QMessageBox.information(self, "Success", "Cases assigned successfully!")
+            self.load_cases()
+
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Error", str(e))
+
+
 
 # ----------------------------
 # Statistics Tab
