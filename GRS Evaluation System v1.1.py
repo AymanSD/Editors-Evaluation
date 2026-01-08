@@ -42,7 +42,7 @@ excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 # login_id = sup_ids[10].lower().strip()
 # login_id = admin_users[6].lower().strip()
-# login_id =  "aaltoum.c".lower().strip()
+# login_id =  "Msayed.c".lower().strip()
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -158,6 +158,7 @@ def load_all_users():
         FROM evaluation."EditorsList"
         WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
                     'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
+        AND "CasePortalName" IS NOT NULL
         ORDER BY "CasePortalName"
     """
     df = pd.read_sql(query, conn)
@@ -853,6 +854,7 @@ class MainWindow(QtWidgets.QWidget):
                         ("UniqueKey", "Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", 
                         "SupervisorName", "GroupID", "GeoAction", "Region", "AssignedSupervisor", "AssignmentDate")
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON ConFLICT ("UniqueKey") DO NOTHING
                     """, values)
                     conn.commit()
                     cur.close()
@@ -864,7 +866,7 @@ class MainWindow(QtWidgets.QWidget):
     def generate_daily_assignment(self):
         self.check_unevaluateded_status()
         try:
-            max_days = 180
+            max_days = 360
             day_back = 1
             found_cases = False
             engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
@@ -905,10 +907,11 @@ class MainWindow(QtWidgets.QWidget):
 
             # Editors and Supervisors for assignment
 
-            supervisors = [i for i in df["SupervisorName"].unique() if not pd.isnull(i) and i not in excluded_supervisors]
+            supervisors = [i for i in current_supervisors]
             excluded = ["Mahmoud Aboalmaged", "Moataz Ibrahim"] + [i for i in supervisors]
             editors = [i for i in active_editors if not pd.isnull(i) and i not in excluded]
             random.shuffle(supervisors)
+            print("----------------",supervisors)
 
             assignments = []
 
@@ -986,6 +989,7 @@ class MainWindow(QtWidgets.QWidget):
                 return None, day_back-1
 
             assign_df = pd.DataFrame(assignments)
+            assign_df = assign_df.drop_duplicates(subset=["UniqueKey"])
             # Write to CaseAssignment
             assign_df = assign_df[["UniqueKey","Case Number", "REN", "GEO S Completion", "Geo Supervisor", "Geo Supervisor Recommendation", "SupervisorName", "GroupID", "GeoAction",
                     "Region", "AssignedSupervisor","AssignmentDate"]]
@@ -996,6 +1000,7 @@ class MainWindow(QtWidgets.QWidget):
             
             days_searched = target_date - min(dates_back) if dates_back else timedelta(0)
             return assign_df, day_back, days_searched.days
+            # return 
         except Exception as e:
             QtWidgets.QMessageBox.warning(None, "Error during case assignment", 
                 f"{e}")
@@ -1089,12 +1094,12 @@ class MainWindow(QtWidgets.QWidget):
 
         # Check if assignments exist
         check_sql = """
-            SELECT COUNT(*) FROM evaluation."CaseAssignment"
+            SELECT COUNT(*) AS "COUNT" FROM evaluation."CaseAssignment"
             WHERE "AssignmentDate" = CURRENT_DATE
         """
-        count = pd.read_sql(check_sql, conn)
+        count = pd.read_sql(check_sql, conn)['COUNT'].iloc[0]
 
-        if count.empty:
+        if count==0:
             # self.check_unevaluateded_status()
             assigned_df, days_back, days_searched = self.generate_daily_assignment()
             if assigned_df is None:

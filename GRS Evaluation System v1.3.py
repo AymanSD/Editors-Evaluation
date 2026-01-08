@@ -3,11 +3,13 @@ import os
 import psycopg2
 import random
 import openpyxl
+import math
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QPixmap
 from PyQt5.QtCore import Qt
 from sqlalchemy import create_engine, text
+import urllib
 import pandas as pd
 from datetime import date, datetime, timedelta
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -28,6 +30,24 @@ DB_SETTINGS = {
     "host":"127.0.0.1",
     "port": "5432"
 }
+
+DB_CONFIG = {
+    "server": '0003-MAAL-01\\LASSQLSERVER',
+    "database": 'GRSDASHBOARD',
+    "username": 'lasapp',
+    "password": 'lasapp@LAS123'
+}
+
+# Build ODBC connection string from existing DB_CONFIG
+odbc_params = (
+    "DRIVER={ODBC Driver 17 for SQL Server};"
+    f"SERVER={DB_CONFIG['server']};"
+    f"DATABASE={DB_CONFIG['database']};"
+    f"UID={DB_CONFIG['username']};"
+    f"PWD={DB_CONFIG['password']};"
+)
+odbc_connect_str = urllib.parse.quote_plus(odbc_params)
+
 
 APP_ICON_PATH = os.path.dirname(os.path.abspath(__file__)) + r"\Assessment.ico"
 logo_path = os.path.dirname(os.path.abspath(__file__)) + r"\LogoFull.png"
@@ -694,12 +714,13 @@ class MainWindow(QtWidgets.QWidget):
     def check_unevaluateded_status(self):
         print("Checking Unevaluated Cases...")
         conn = get_connection()
-        
+        # Create SQLAlchemy engine for SQL Server via pyodbc
+        engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
         # 1. Fetch all un-evaluated assignments
         query_assignments = """
             SELECT *FROM evaluation."CaseAssignment"
             WHERE "IsEvaluated" = FALSE AND "IsRetired" = FALSE AND "AssignmentDate" <> CURRENT_DATE
-            AND "UniqueKey" NOT IN (SELECT "UniqueKey" FROM evaluation."OpsData")"""
+            AND "Case Number" IN (SELECT "Case Number" FROM grsdbrd."CurrentCases")"""
         
         assignments = pd.read_sql(query_assignments, conn)
         if assignments.empty:
@@ -724,64 +745,52 @@ class MainWindow(QtWidgets.QWidget):
             else:
                 action_query = """AND "GeoAction" NOT IN ('رفض','No Action') """
             
-            # Check if the case exists in OpsData
-            check_query = """SELECT 1 FROM evaluation."OpsData" WHERE "UniqueKey" = %s"""
-            exists = pd.read_sql(check_query, conn, params=[case_id])
+            # # Check if the case exists in OpsData
+            # check_query = """SELECT 1 FROM evaluation."OpsData" WHERE "UniqueKey" = %s"""
+            # exists = pd.read_sql(check_query, conn, params=[case_id])
             
-            if exists.empty:
-                print("_____Case no longer exists, fetch replacement using same logic as daily assignment")
+            # if exists.empty:
+            #     print("_____Case no longer exists, fetch replacement using same logic as daily assignment")
                 
-                replacement_query = f"""
-                    SELECT * FROM evaluation."OpsData"
-                    WHERE "Geo Supervisor" = %s
-                    {action_query}
-                    AND "UniqueKey" NOT IN (
-                    SELECT "UniqueKey" FROM evaluation."EvaluationTable"
-                    UNION
-                    SELECT "UniqueKey" FROM evaluation."CaseAssignment"
-                )
-                    ORDER BY "GEO S Completion" DESC
-                    LIMIT 1
-                """
-                replacement = pd.read_sql(replacement_query, conn, params=[editor])#.iloc[0]
-                print(f"_____{len(replacement)}")
-                if not replacement.empty:
-                    replacement_case = replacement.iloc[0]
-                    replacement_case["REN"] = replacement_case["REN"].astype(str)
-                    print(replacement_case)
-                    # Update the assignment row with the new case info
-                    # update_query = """
-                    #     UPDATE evaluation."CaseAssignment"
-                    #     SET "UniqueKey" = %s,
-                    #         "Case Number" = %s,
-                    #         "REN" = %s,
-                    #         "CompletionDate" = %s,
-                    #         "EditorRecommendation" = %s,
-                    #         "GeoAction" = %s,
-                    #         "SupervisorName" = %s,
-                    #         "GroupID" = %s,
-                    #         "Region" = %s
-                    #     WHERE "AssignmentID" = %s
-                    # """
-                    update_query = """UPDATE evaluation."CaseAssignment"
-                                    SET "IsRetired" = TRUE
-                                     WHERE "AssignmentID" = %s """
-                    cols =  ["UniqueKey", "Case Number", "REN", "GEO S Completion", "Geo Supervisor", 
-                             "Geo Supervisor Recommendation", "SupervisorName", "GroupID", "GeoAction", "Region"]
-                    values = replacement_case[cols].tolist() + [assigned_supervisor, assignment_date]
-                    print(len(values))
+            replacement_query = f"""
+                SELECT * FROM grsdbrd."GeoCompletion"
+                WHERE "Geo Supervisor" = %s
+                {action_query}
+                AND "UniqueKey" NOT IN (
+                SELECT "UniqueKey" FROM evaluation."EvaluationTable"
+                UNION
+                SELECT "UniqueKey" FROM evaluation."CaseAssignment"
+            )
+                ORDER BY "GEO S Completion" DESC
+                LIMIT 1
+            """
+            replacement = pd.read_sql(replacement_query, conn, params=[editor])#.iloc[0]
+            print(f"_____{len(replacement)}")
+            if not replacement.empty:
+                replacement_case = replacement.iloc[0]
+                replacement_case["REN"] = replacement_case["REN"].astype(str)
+                print(replacement_case)
 
-                    print(f"Case: {case_id} is replaced by: {values[0]}")
-                    cur = conn.cursor()
-                    cur.execute(update_query, [assign_id])
-                    cur.execute("""
-                        INSERT INTO evaluation."CaseAssignment"
-                        ("UniqueKey", "Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", 
-                        "SupervisorName", "GroupID", "GeoAction", "Region", "AssignedSupervisor", "AssignmentDate")
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    """, values)
-                    conn.commit()
-                    cur.close()
+                update_query = """UPDATE evaluation."CaseAssignment"
+                                SET "IsRetired" = TRUE
+                                    WHERE "AssignmentID" = %s """
+                cols =  ["UniqueKey", "Case Number", "REN", "GEO S Completion", "Geo Supervisor", 
+                            "Geo Supervisor Recommendation", "SupervisorName", "GroupID", "GeoAction", "Region"]
+                values = replacement_case[cols].tolist() + [assigned_supervisor, assignment_date]
+                print(len(values))
+
+                print(f"Case: {case_id} is replaced by: {values[0]}")
+                cur = conn.cursor()
+                cur.execute(update_query, [assign_id])
+                cur.execute("""
+                    INSERT INTO evaluation."CaseAssignment"
+                    ("UniqueKey", "Case Number", "REN", "CompletionDate", "EditorName", "EditorRecommendation", 
+                    "SupervisorName", "GroupID", "GeoAction", "Region", "AssignedSupervisor", "AssignmentDate")
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, values)
+                conn.commit()
+                cur.close()
+                engine_sqlserver.dispose()
         QtWidgets.QMessageBox.warning(None, "Unresolved Assignments", f"Finished Re-assignment of unresolved cases.")
 
     # --------------------------
@@ -790,6 +799,7 @@ class MainWindow(QtWidgets.QWidget):
     def generate_daily_assignment(self):
         try:
             max_days = 180
+            engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
             engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
             # engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
             conn = get_connection()
@@ -816,82 +826,70 @@ class MainWindow(QtWidgets.QWidget):
 
             assignments = []
             dates_back_used = set()
-
-            # 🔁 MAIN LOOP — PER EDITOR
-            for idx, editor in enumerate(active_editors):
-                reject_case = None
-                edit_case = None
-
-                for day_back in range(1, max_days + 1):
-                    search_date = self.end_date.date().toPyDate() - timedelta(days=day_back)
-                    dates_back_used.add(search_date)
-
-                    sql = """
+            sql = """
                         SELECT *
-                        FROM evaluation."OpsData"
-                        WHERE "GEO S Completion"::date = %s
-                        AND "Geo Supervisor" = %s
+                        FROM grsdbrd."GeoCompletion"
                         AND "GeoAction" IS NOT NULL
                         AND "GeoAction" <> 'No Action'
-                        AND "GroupID" IN (
-                            'Editor Morning Shift',
-                            'Editor Night Shift',
-                            'Pod-Al-Shuhada-1',
-                            'Pod-Al-Shuhada-2',
-                            'Urgent Team'
-                        )
-                        AND "UniqueKey" NOT IN (
-                            SELECT "UniqueKey" FROM evaluation."EvaluationTable"
-                            UNION
-                            SELECT "UniqueKey" FROM evaluation."CaseAssignment"
-                        )
                     """
+            completed = pd.read_sql(sql, engine_sqlserver)
+            current_cases = pd.read_sql("""SELECT * FROM grsdbrd."CurrentCases" """, engine_sqlserver)
+            evaluated_cases = pd.read_sql("""SELECT "UniqueKey" FROM evaluation."EvaluationTable" 
+                                        UNION 
+                                        SELECT "UniqueKey" FROM evaluation."CaseAssignment" """, conn)
+            df_cases = completed[completed["Geo Supervisor"].isin(active_editors["CasePortalName"])]
+            df_cases = df_cases[(~df_cases["Case Number"].isin(current_cases["Case Number"])) & (~df_cases["UniqueKey"].isin(evaluated_cases["UniqueKey"]))]
+            # counts = df_cases.groupby("Geo Supervisor").size().reset_index(name="Count")
+            
+            # 🔁 MAIN LOOP — PER EDITOR
+            
+            for _, row in active_editors.iterrows():
+                editor = row["CasePortalName"]
+                total_required = 2
 
-                    df = pd.read_sql(sql, conn, params=[search_date, editor])
+                reject_needed = total_required // 2
+                non_reject_needed = math.ceil(total_required / 2)
 
-                    if df.empty:
-                        continue
+                editor_cases = (
+                    df_cases[df_cases["Geo Supervisor"] == editor]
+                    .sort_values("GEO S Completion", ascending=False)
+                )
 
-                    if reject_case is None:
-                        rc = df[df["GeoAction"] == "رفض"]
-                        if not rc.empty:
-                            reject_case = rc.sample(1)
+                reject_cases = editor_cases[editor_cases["GeoAction"] == "رفض"]
+                non_reject_cases = editor_cases[~editor_cases["GeoAction"].isin(["رفض", "No Action"])]
 
-                    if edit_case is None:
-                        ec = df[df["GeoAction"] != "رفض"]
-                        if not ec.empty:
-                            edit_case = ec.sample(1)
+                selected_reject = reject_cases.head(reject_needed)
+                selected_non_reject = non_reject_cases.head(non_reject_needed)
 
-                    # ✅ Stop early if both found
-                    if reject_case is not None and edit_case is not None:
-                        break
+                selected = pd.concat([selected_reject, selected_non_reject])
 
-                # ❌ Skip editor only if NOTHING found
-                if reject_case is None and edit_case is None:
-                    continue
+                # Optional: Top-up from remaining recent cases if shortage exists
+                if len(selected) < total_required:
+                    remaining = total_required - len(selected)
+                    extra_cases = (
+                        editor_cases
+                        .drop(selected.index)
+                        .head(remaining)
+                    )
+                    selected = pd.concat([selected, extra_cases])
 
-                assigned_supervisor = supervisors[idx % len(supervisors)]
+                assignments.append(selected)
 
-                for case_df in [reject_case, edit_case]:
-                    if case_df is None:
-                        continue
+                
 
-                    row = case_df.iloc[0].to_dict()
-                    row["AssignedSupervisor"] = assigned_supervisor
-                    row["AssignmentDate"] = date.today()
-                    assignments.append(row)
+              
 
             if not assignments:
                 QtWidgets.QMessageBox.warning(None, "No Assignments", "No cases could be assigned.")
                 return None, 0, 0
 
-            assign_df = pd.DataFrame(assignments)
+            assign_df = pd.concat(assignments, ignore_index=True)
 
             assign_df = assign_df[[
                 "UniqueKey", "Case Number", "REN", "GEO S Completion",
                 "Geo Supervisor", "Geo Supervisor Recommendation",
                 "SupervisorName", "GroupID", "GeoAction",
-                "Region", "AssignedSupervisor", "AssignmentDate"
+                "Region"
             ]]
 
             assign_df = assign_df.rename(columns={
@@ -899,6 +897,12 @@ class MainWindow(QtWidgets.QWidget):
                 "Geo Supervisor": "EditorName",
                 "Geo Supervisor Recommendation": "EditorRecommendation"
             })
+            assig_df["AssignedSupervisor"] = [current_supervisors[i % len(current_supervisors)] for i in range(len(assign_df))]
+            assign_df["AssignmentDate"] = datetime.now()
+            assign_df["AssignmentType"] = 'Auto'
+            assign_df["AssignedBy"] = login_id
+
+
 
             assign_df.to_sql(
                 "CaseAssignment",
@@ -908,11 +912,11 @@ class MainWindow(QtWidgets.QWidget):
                 index=False
             )
 
-            days_searched = (
-                max(dates_back_used) - min(dates_back_used)
-            ).days if dates_back_used else 0
+            days_searched = (assign_df["CompletionDate"] - assign_df["CompletionDate"].min()).days
+            conn.close()
+            engine_sqlserver.dispose()
 
-            return assign_df, max(len(dates_back_used), 1), days_searched
+            return assign_df, days_searched
 
         except Exception as e:
             QtWidgets.QMessageBox.warning(
@@ -993,11 +997,12 @@ class MainWindow(QtWidgets.QWidget):
         #     return
 
         conn = get_connection()
-        check_updates = """SELECT * FROM evaluation."OpsData" 
-            WHERE "UploadDate"=CURRENT_DATE 
+        engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+        check_updates = """SELECT * FROM grsdbrd."CurrentCases" 
+            WHERE "UploadDate" = CAST(GETDATE() AS date)
             LIMIT 1"""
-        Ops_df = pd.read_sql(check_updates, conn)
-        if Ops_df.empty:
+        current_df = pd.read_sql(check_updates, conn)
+        if current_df.empty:
             if login_id in admin_users:
                 message = "Database is not up to date."
             else:
@@ -1011,14 +1016,14 @@ class MainWindow(QtWidgets.QWidget):
             WHERE "AssignmentDate" = CURRENT_DATE
         """
         count = pd.read_sql(check_sql, conn)['count'].iloc[0]
-        print(f"*/*/*/*/*/**/*//* {count}")
+        # print(f"*/*/*/*/*/**/*//* {count}")
         if count==0:
             # print(f'{count} cases')
             self.check_unevaluateded_status()
             # print("------No cases assigned today")
             if login_id in admin_users:
                 
-                assigned_df, days_back, days_searched = self.generate_daily_assignment()
+                assigned_df, days_searched = self.generate_daily_assignment()
                 if assigned_df is None:
                     return
                 QtWidgets.QMessageBox.information(self, "Assignments Generated",
@@ -1753,195 +1758,196 @@ class ReplacementManager(QtWidgets.QDialog):
 
         QtWidgets.QMessageBox.information(self, "Success", "Replacement saved!")
 
-class UpdateOpsData(QtWidgets.QDialog):
-    def __init__(self, engine, parent=None):
-        super().__init__(parent)
-        self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@10.150.40.74:5432/GRS")
-        # self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@127.0.0.1:5432/GSA")
+# class UpdateOpsData(QtWidgets.QDialog):
+#     def __init__(self, engine, parent=None):
+#         super().__init__(parent)
+#         self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@10.150.40.74:5432/GRS")
+#         # self.engine = create_engine("postgresql+psycopg2://evalApp:app1234@127.0.0.1:5432/GSA")
 
-        self.setWindowTitle("Update Ops Data")
-        self.setMinimumWidth(400)
-        self.setWindowIcon(QIcon(APP_ICON_PATH))
+#         self.setWindowTitle("Update Ops Data")
+#         self.setMinimumWidth(400)
+#         self.setWindowIcon(QIcon(APP_ICON_PATH))
 
-        # Title label
-        self.title = QtWidgets.QLabel("Update Ops Data")
-        self.title.setObjectName("TitleLabel")
+#         # Title label
+#         self.title = QtWidgets.QLabel("Update Ops Data")
+#         self.title.setObjectName("TitleLabel")
 
-        # --- UI Elements ---
-        self.label = QtWidgets.QLabel("Select OpsData Excel file:")
-        self.btn_select = QtWidgets.QPushButton("Browse")
-        self.btn_select.setStyleSheet("""
-           QPushButton {
-                background-color: #0A3556;
-                color: white;
-                border-radius: 6px;
-                padding: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #a1503e; }
-        """)
-        self.btn_run = QtWidgets.QPushButton("Update OP Data")
-        self.btn_run.setStyleSheet("""
-           QPushButton {
-                background-color: #824131;
-                color: white;
-                border-radius: 6px;
-                padding: 4px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #a1503e; }
-        """)
-        self.status = QtWidgets.QLabel("")
+#         # --- UI Elements ---
+#         self.label = QtWidgets.QLabel("Select OpsData Excel file:")
+#         self.btn_select = QtWidgets.QPushButton("Browse")
+#         self.btn_select.setStyleSheet("""
+#            QPushButton {
+#                 background-color: #0A3556;
+#                 color: white;
+#                 border-radius: 6px;
+#                 padding: 4px;
+#                 font-weight: bold;
+#             }
+#             QPushButton:hover { background-color: #a1503e; }
+#         """)
+#         self.btn_run = QtWidgets.QPushButton("Update OP Data")
+#         self.btn_run.setStyleSheet("""
+#            QPushButton {
+#                 background-color: #824131;
+#                 color: white;
+#                 border-radius: 6px;
+#                 padding: 4px;
+#                 font-weight: bold;
+#             }
+#             QPushButton:hover { background-color: #a1503e; }
+#         """)
+#         self.status = QtWidgets.QLabel("")
 
-        # Disable Run button until a file is chosen
-        self.btn_run.setEnabled(False)
+#         # Disable Run button until a file is chosen
+#         self.btn_run.setEnabled(False)
 
-        # Layout
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.label)
-        layout.addWidget(self.btn_select)
-        layout.addWidget(self.btn_run)
-        layout.addWidget(self.status)
-        self.setLayout(layout)
+#         # Layout
+#         layout = QtWidgets.QVBoxLayout()
+#         layout.addWidget(self.label)
+#         layout.addWidget(self.btn_select)
+#         layout.addWidget(self.btn_run)
+#         layout.addWidget(self.status)
+#         self.setLayout(layout)
 
-        # Connect signals
-        self.btn_select.clicked.connect(self.select_excel)
-        # self.btn_run.clicked.connect(lambda: self.run_update
-        self.btn_run.clicked.connect(self.run_update)
-        ThemeManager.apply_theme()
-        # ⭐ APPLY THE THEME
-        # ThemeManager.apply_theme(self)
+#         # Connect signals
+#         self.btn_select.clicked.connect(self.select_excel)
+#         # self.btn_run.clicked.connect(lambda: self.run_update
+#         self.btn_run.clicked.connect(self.run_update)
+#         ThemeManager.apply_theme()
+#         # ⭐ APPLY THE THEME
+#         # ThemeManager.apply_theme(self)
 
-    def update_status(self, msg):
-        self.status.setText(msg)
-        QtWidgets.QApplication.processEvents()
+#     def update_status(self, msg):
+#         self.status.setText(msg)
+#         QtWidgets.QApplication.processEvents()
 
 
-    def select_excel(self):
-        """Open file dialog and return selected Excel file."""
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self,
-            "Select Excel File",
-            "",
-            "Excel Files (*.xlsx *.xls)"
-        )
-        if file_path:
-            self.file_path = file_path
-            self.btn_run.setEnabled(True)
-            return file_path
-        else:    
-            return None
+#     def select_excel(self):
+#         """Open file dialog and return selected Excel file."""
+#         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+#             self,
+#             "Select Excel File",
+#             "",
+#             "Excel Files (*.xlsx *.xls)"
+#         )
+#         if file_path:
+#             self.file_path = file_path
+#             self.btn_run.setEnabled(True)
+#             return file_path
+#         else:    
+#             return None
 
-    def load_excel_df(self, file_path):
-        """Load Excel into DataFrame."""
-        try:
-            wb = openpyxl.load_workbook(file_path, read_only=True)
-            ws = wb['Sheet1']
-            header_row_idx = None
-            for i, row in enumerate(ws.iter_rows(max_col=2, max_row=10, values_only=True)):
-                if row and 'Case Number' in row:
-                    header_row_idx = i
-                    break
-            wb.close()
-            if header_row_idx is not None:
-                df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=header_row_idx)
-                df = df.drop_duplicates(subset="Case Number")
-                df = df[(df['Geo Supervisor'].notnull()) & (df['GEO S Completion'].notnull())]
-                df = df.reset_index(drop=True)
-                print(len(df))
-                df["UniqueKey"] = [str(i) + '_' + str(pd.to_datetime(j).round('s'))  for i, j in zip(df["Case Number"].values, df["GEO S Completion"].values)]
-                df["UploadDate"] = datetime.now().date()
-                df["UploadedBy"] = os.getlogin()
-                df = convert_to_date(df)
-                df = getGeoAction(df) 
-                print("Excel file was loaded successfully")
-                return df
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to read Excel file:\n{e}")
-            return None
+#     def load_excel_df(self, file_path):
+#         """Load Excel into DataFrame."""
+#         try:
+#             wb = openpyxl.load_workbook(file_path, read_only=True)
+#             ws = wb['Sheet1']
+#             header_row_idx = None
+#             for i, row in enumerate(ws.iter_rows(max_col=2, max_row=10, values_only=True)):
+#                 if row and 'Case Number' in row:
+#                     header_row_idx = i
+#                     break
+#             wb.close()
+#             if header_row_idx is not None:
+#                 df = pd.read_excel(file_path, sheet_name='Sheet1', skiprows=header_row_idx)
+#                 df = df.drop_duplicates(subset="Case Number")
+#                 df = df[(df['Geo Supervisor'].notnull()) & (df['GEO S Completion'].notnull())]
+#                 df = df.reset_index(drop=True)
+#                 print(len(df))
+#                 df["UniqueKey"] = [str(i) + '_' + str(pd.to_datetime(j).round('s'))  for i, j in zip(df["Case Number"].values, df["GEO S Completion"].values)]
+#                 df["UploadDate"] = datetime.now().date()
+#                 df["UploadedBy"] = os.getlogin()
+#                 df = convert_to_date(df)
+#                 df = getGeoAction(df) 
+#                 print("Excel file was loaded successfully")
+#                 return df
+#         except Exception as e:
+#             QtWidgets.QMessageBox.critical(self.parent, "Error", f"Failed to read Excel file:\n{e}")
+#             return None
 
-    def load_editorsList(self):
-        """Load userlist table from DB."""
-        print("Loading Editors' List")
-        try:
-            engine = create_engine("postgresql://app_user:app1234@10.150.40.74:5432/GSA")
-            # engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
-            editors_list = pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine)
-            editors_list = convert_to_date(editors_list)
-            print("Successfully Loaded Editors' List ✅")
-            return editors_list
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load userlist:\n{e}")
-            return None
+#     def load_editorsList(self):
+#         """Load userlist table from DB."""
+#         print("Loading Editors' List")
+#         try:
+#             engine = create_engine("postgresql://app_user:app1234@10.150.40.74:5432/GSA")
+#             # engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
+#             editors_list = pd.read_sql("SELECT * FROM public.\"EditorsList\" ", engine)
+#             editors_list = convert_to_date(editors_list)
+#             print("Successfully Loaded Editors' List ✅")
+#             return editors_list
+#         except Exception as e:
+#             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load userlist:\n{e}")
+#             return None
 
-    def join_editors_list(self, ops_df, editorsList):
-        """Join Excel data with userlist on a given key."""
-        print("🔁Joining Editors' List")
+#     def join_editors_list(self, ops_df, editorsList):
+#         """Join Excel data with userlist on a given key."""
+#         print("🔁Joining Editors' List")
         
-        try:
-            ops_df['GEO S Completion'] = pd.to_datetime(ops_df['GEO S Completion']).dt.normalize()
-            editorsList = editorsList.rename({'CaseProtalName': 'Geo Supervisor'}, axis=1)
-            editorsList["ListDate"] = pd.to_datetime(editorsList["ListDate"]).dt.normalize()
-            print("✅ Date Normalization!")
-            print(ops_df.columns[-15:])
-            print(editorsList.columns)
-            ops_df = ops_df.sort_values(by=["GEO S Completion", "Geo Supervisor"])
-            editorsList = editorsList.sort_values(by=["ListDate", "Geo Supervisor"])
-            print("✅ Sorted Dataframes")
-            ops_df = pd.merge_asof(ops_df, editorsList, by="Geo Supervisor", left_on="GEO S Completion", 
-                                    right_on="ListDate", direction='backward')
-            print("✅ Merged")
-            ops_df['GEO S Completion'] = [pd.to_datetime(i).date() for i in ops_df['GEO S Completion']]
-            print("✅ GEO S Completion Converted")
-            # print(ops_df.columns[-10:])
-            ops_df['ListDate'] = [pd.to_datetime(i).date() for i in ops_df['ListDate']]
-            print("✅ Ops Data was joined successfully")
-            return ops_df
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to join data:\n{e}")
-            return None
+#         try:
+#             ops_df['GEO S Completion'] = pd.to_datetime(ops_df['GEO S Completion']).dt.normalize()
+#             editorsList = editorsList.rename({'CaseProtalName': 'Geo Supervisor'}, axis=1)
+#             editorsList["ListDate"] = pd.to_datetime(editorsList["ListDate"]).dt.normalize()
+#             print("✅ Date Normalization!")
+#             print(ops_df.columns[-15:])
+#             print(editorsList.columns)
+#             ops_df = ops_df.sort_values(by=["GEO S Completion", "Geo Supervisor"])
+#             editorsList = editorsList.sort_values(by=["ListDate", "Geo Supervisor"])
+#             print("✅ Sorted Dataframes")
+#             ops_df = pd.merge_asof(ops_df, editorsList, by="Geo Supervisor", left_on="GEO S Completion", 
+#                                     right_on="ListDate", direction='backward')
+#             print("✅ Merged")
+#             ops_df['GEO S Completion'] = [pd.to_datetime(i).date() for i in ops_df['GEO S Completion']]
+#             print("✅ GEO S Completion Converted")
+#             # print(ops_df.columns[-10:])
+#             ops_df['ListDate'] = [pd.to_datetime(i).date() for i in ops_df['ListDate']]
+#             print("✅ Ops Data was joined successfully")
+#             return ops_df
+#         except Exception as e:
+#             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to join data:\n{e}")
+#             return None
 
-    def replace_opsdata(self, ops_df):
-        """Replace OpsData table in the DB."""
-        try:
-            with self.engine.begin() as conn:
-            # cur = conn.cursor()
-                conn.execute(text("""TRUNCATE evaluation."OpsData" RESTART IDENTITY"""))
-            print("✅ Cleared Op Data")
-            # Pandas table and inserts
-            ops_df.to_sql("OpsData", self.engine, schema='evaluation', if_exists='append', index=False)#, method="multi", chunksize=5000)
-            # print("✅ Loaded New Op Data")
-            self.update_status("⬆️ Updating database...")
-            # conn.commit()
-            QtWidgets.QMessageBox.information(self, "Success", "Ops Data updated successfully!")
+#     def replace_opsdata(self, ops_df):
+#         """Replace OpsData table in the DB."""
+#         try:
+#             with self.engine.begin() as conn:
+#             # cur = conn.cursor()
+#                 conn.execute(text("""TRUNCATE evaluation."OpsData" RESTART IDENTITY"""))
+#             print("✅ Cleared Op Data")
+#             # Pandas table and inserts
+#             ops_df.to_sql("OpsData", self.engine, schema='evaluation', if_exists='append', index=False)#, method="multi", chunksize=5000)
+#             # print("✅ Loaded New Op Data")
+#             self.update_status("⬆️ Updating database...")
+#             # conn.commit()
+#             QtWidgets.QMessageBox.information(self, "Success", "Ops Data updated successfully!")
 
-        except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to update OpsData:\n{e}")
+#         except Exception as e:
+#             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to update OpsData:\n{e}")
 
-    def run_update(self):
-        """Main workflow to update OpsData."""
-        file_path = self.file_path
-        if not file_path:
-            QtWidgets.QMessageBox.warning(self, "Error", "Please select an Excel file.")
-            return
+#     def run_update(self):
+#         """Main workflow to update OpsData."""
+#         file_path = self.file_path
+#         if not file_path:
+#             QtWidgets.QMessageBox.warning(self, "Error", "Please select an Excel file.")
+#             return
 
-        self.update_status("📄 Loading Excel file...")
-        ops_data = self.load_excel_df(file_path)
-        if ops_data is None:
-            return
+#         self.update_status("📄 Loading Excel file...")
+#         ops_data = self.load_excel_df(file_path)
+#         if ops_data is None:
+#             return
 
-        self.update_status("👥 Loading Editors List...")
-        df_editorList = self.load_editorsList()
-        if df_editorList is None:
-            return
+#         self.update_status("👥 Loading Editors List...")
+#         df_editorList = self.load_editorsList()
+#         if df_editorList is None:
+#             return
 
-        self.update_status("🔗 Joining editors list...")
-        df_joined = self.join_editors_list(ops_data, df_editorList)
-        if df_joined is None:
-            return
-        self.update_status("⬆️ Updating database...")
-        self.replace_opsdata(df_joined)
+#         self.update_status("🔗 Joining editors list...")
+#         df_joined = self.join_editors_list(ops_data, df_editorList)
+#         if df_joined is None:
+#             return
+#         self.update_status("⬆️ Updating database...")
+#         self.replace_opsdata(df_joined)
  
+
 class ThemeManager:
     is_dark = False
 
@@ -2131,6 +2137,7 @@ class AssignCasesDialog(QtWidgets.QDialog):
         self.resize(900, 500)
 
         self.conn = get_connection()
+        self.engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
 
         # --- Widgets ---
         self.editor_combo = QtWidgets.QComboBox()
@@ -2185,22 +2192,6 @@ class AssignCasesDialog(QtWidgets.QDialog):
 
         self.editor_combo.addItems(sorted(df["CasePortalName"].tolist()))
 
-    # def get_supervisor_counts(self):
-    #     sql = """
-    #         SELECT 
-    #             "AssignedSupervisor",
-    #             COUNT(*) AS cnt
-    #         FROM evaluation."CaseAssignment"
-    #         WHERE "IsEvaluated" = FALSE 
-    #         AND "IsRetired" = FALSE
-    #         AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
-    #                     'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
-    #         GROUP BY "AssignedSupervisor"
-    #     """
-    #     df = pd.read_sql(sql, self.conn)
-    #     supervisors = [i+ f" ({j})" for i, j in zip(df["AssignedSupervisor"], df["cnt"])]
-    #     return dict(zip(df["AssignedSupervisor"], df["cnt"]))
-
     # -------------------------------------------------------
     # Load Supervisors
     # -------------------------------------------------------
@@ -2229,16 +2220,16 @@ class AssignCasesDialog(QtWidgets.QDialog):
         sql = """
             SELECT "UniqueKey","Case Number", "REN", "GEO S Completion","Geo Supervisor",
                 "Geo Supervisor Recommendation", "SupervisorName","GroupID","GeoAction", "Region"
-            FROM evaluation."OpsData"
+            FROM grsdbrd."GeoCompletion"
             WHERE "Geo Supervisor" = %s
-              AND "UniqueKey" NOT IN (
+        """
+        evaluated_df = pd.read_sql("""
                     SELECT "UniqueKey" FROM evaluation."EvaluationTable"
                     UNION
-                    SELECT "UniqueKey" FROM evaluation."CaseAssignment"
-              )
-        """
+                    SELECT "UniqueKey" FROM evaluation."CaseAssignment" """, self.conn)
 
-        self.df = pd.read_sql(sql, self.conn, params=[editor])
+        self.df = pd.read_sql(sql, self.engine_sqlserver, params=[editor])
+        self.df = self.df[~self.df["UniqueKey"].isin(evaluated_df["UniqueKey"])]
 
         if self.df.empty:
             QtWidgets.QMessageBox.information(self, "No Cases", "No available cases for this editor.")
@@ -2258,7 +2249,7 @@ class AssignCasesDialog(QtWidgets.QDialog):
 
         geoaction_col = self.df.columns.get_loc("GeoAction")
         caseNum_col = self.df.columns.get_loc("Case Number")
-        actions = [""] + pd.read_sql('SELECT DISTINCT "GeoAction" FROM evaluation."OpsData"', self.conn)["GeoAction"].tolist()
+        actions = [""] + pd.read_sql('SELECT DISTINCT "GeoAction" FROM evaluation."CaseAssignment"', self.conn)["GeoAction"].tolist()
 
         for r in range(len(self.df)):
             for c, col in enumerate(self.df.columns):
@@ -2299,43 +2290,29 @@ class AssignCasesDialog(QtWidgets.QDialog):
         try:
             with self.conn:
                 with self.conn.cursor() as cur:
-                    for idx, r in enumerate(rows):
-                        row = self.df.iloc[r]
-                        geoaction_widget = self.table.cellWidget(
-                            r, self.df.columns.get_loc("GeoAction")
-                        )
-                        new_geoaction = geoaction_widget.currentText()
+                    with self.engine_sqlserver.cursor() as cur2:
+                        for idx, r in enumerate(rows):
+                            row = self.df.iloc[r]
+                            geoaction_widget = self.table.cellWidget(
+                                r, self.df.columns.get_loc("GeoAction")
+                            )
+                            new_geoaction = geoaction_widget.currentText()
 
-                        supervisor = supervisors[idx % len(supervisors)]
+                            supervisor = supervisors[idx % len(supervisors)]
 
-                        # Update GeoAction
-                        cur.execute("""
-                            UPDATE evaluation."OpsData"
-                            SET "GeoAction" = %s
-                            WHERE "UniqueKey" = %s
-                        """, (new_geoaction, row["UniqueKey"]))
+                            # Update GeoAction
+                            cur2.execute("""UPDATE grsdbrd."GeoCompletion"
+                                SET "GeoAction" = %s
+                                WHERE "UniqueKey" = %s """, (new_geoaction, row["UniqueKey"]))
 
-                        # Insert Assignment
-                        cur.execute("""
-                            INSERT INTO evaluation."CaseAssignment"
-                            ("UniqueKey","Case Number","REN","CompletionDate","EditorName", "EditorRecommendation",
-                             "SupervisorName","GroupID","GeoAction","Region",
-                             "AssignedSupervisor","AssignmentDate")
-                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        """, (
-                            row["UniqueKey"],
-                            row["Case Number"],
-                            row["REN"],
-                            row["GEO S Completion"],
-                            row["Geo Supervisor"],
-                            row["Geo Supervisor Recommendation"],
-                            row["SupervisorName"],
-                            row["GroupID"],
-                            new_geoaction,
-                            row["Region"],
-                            supervisor,
-                            date.today()
-                        ))
+                            # Insert Assignment
+                            cur.execute("""INSERT INTO evaluation."CaseAssignment"
+                                ("UniqueKey","Case Number","REN","CompletionDate","EditorName", "EditorRecommendation", "SupervisorName","GroupID","GeoAction","Region",
+                                "AssignedSupervisor","AssignmentDate", "AssignmentType", "AssignedBy")
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) """, 
+                                (row["UniqueKey"], row["Case Number"], row["REN"], row["GEO S Completion"], row["Geo Supervisor"],
+                                row["Geo Supervisor Recommendation"], row["SupervisorName"], row["GroupID"], new_geoaction,
+                                row["Region"], supervisor, datetime.now(), 'Manual', login_id))
 
             QtWidgets.QMessageBox.information(self, "Success", "Cases assigned successfully!")
             self.load_cases()
