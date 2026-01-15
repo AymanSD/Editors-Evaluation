@@ -42,7 +42,7 @@ excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 # login_id = sup_ids[10].lower().strip()
 # login_id = admin_users[6].lower().strip()
-# login_id =  "Msayed.c".lower().strip()
+# login_id =  "MAlsheikh.c".lower().strip()
 # ----------------------------
 # Helper function for DB connection
 # ----------------------------
@@ -157,7 +157,7 @@ def load_all_users():
         SELECT DISTINCT("CasePortalName")
         FROM evaluation."EditorsList"
         WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
-                    'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
+                    'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team', 'Support Team_Night', 'RG-Cases', 'Support Team_Morning')
         AND "CasePortalName" IS NOT NULL
         ORDER BY "CasePortalName"
     """
