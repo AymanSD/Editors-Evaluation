@@ -1,3 +1,16 @@
+# Date: 29. December 2025
+# Updates: 
+#   - Add a bottleneck for assignment: Do not generate assignments unless the Ops Data is up-to-date (current date)
+#   - Add Update Op data functionality
+#   - Add supervisor Replacement functionality
+#   - Add Region variable to the case information
+#   - Fixed bugs: 
+#       - Updating Assignment Status for replacement function fixed
+#       - Showing evaluated/remaining counts
+
+
+##########################################################################################################################################
+
 import sys
 import os
 import psycopg2
@@ -1332,8 +1345,8 @@ class EvaluationWindow(QtWidgets.QDialog):
         self.comment_text = QtWidgets.QTextEdit()
         self.comment_text.setReadOnly(False)
         self.comment_text.setMaximumHeight(60)
-        # eval_layout.addWidget(comment, (len(fields) // 2) + 1, 0, 1, 2)
-        # eval_layout.addWidget(self.comment_text, len(fields)//2 + 2,0, 1, 4)
+        eval_layout.addWidget(comment, (len(fields) // 2) + 1, 0, 1, 2)
+        eval_layout.addWidget(self.comment_text, len(fields)//2 + 2,0, 1, 4)
                 
         # print(self.eval_fields)
         
