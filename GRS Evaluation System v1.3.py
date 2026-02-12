@@ -185,12 +185,14 @@ def add_replacement(absent, replacement, start, end):
         ON CONFLICT ("AbsentSupervisorID", "StartDate", "EndDate")
         DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
                       "ReplacementSupervisorID" = EXCLUDED."ReplacementSupervisorID", 
-                      "EndDate" = EXCLUDED."EndDate";
-    """
+                      "EndDate" = EXCLUDED."EndDate";"""
 
     cur.execute(query, (absent, absent_id, replacement, replaced_id, start, end))
     conn.commit()
     conn.close()
+
+
+
 
 def load_groups():
     conn = get_connection()
@@ -538,6 +540,20 @@ class MainWindow(QtWidgets.QWidget):
             }
             QPushButton:hover { background-color: #a1503e; }
         """)
+
+        self.generate_btn = QtWidgets.QPushButton(" Generate Assignments")
+        self.generate_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #0A3556;
+                color: white;
+                padding: 6px;
+                border-radius: 8px;
+                font-weight: 300;
+                font-size: 13px;
+                width: 70%;
+            }
+            QPushButton:hover { background-color: #005a9e; }
+        """)
         
         fil_btn_layout = QtWidgets.QHBoxLayout()
         # Button row (optional)
@@ -546,6 +562,8 @@ class MainWindow(QtWidgets.QWidget):
         fil_btn_layout.addWidget(self.load_btn)
         fil_btn_layout.addWidget(self.reset_btn)
         sidebar_layout.addLayout(fil_btn_layout)
+        if login_id in admin_users:
+            sidebar_layout.addWidget(self.generate_btn)
         sidebar_layout.addStretch()
 
         self.assign_btn = QtWidgets.QPushButton("Assign Cases")
@@ -680,6 +698,7 @@ class MainWindow(QtWidgets.QWidget):
         
         self.load_btn.clicked.connect(self.load_cases)
         self.reset_btn.clicked.connect(self.reset_filters)
+        # self.generate_btn.clicked.connect(self.generate_daily_assignment)
         self.table.cellDoubleClicked.connect(self.open_evaluation)
 
         self.cases_df = pd.DataFrame()
@@ -833,7 +852,7 @@ class MainWindow(QtWidgets.QWidget):
     # --------------------------
     # On-demand assignment
     # --------------------------
-    def generate_daily_assignment(self):
+    def generate_daily_assignment(self, cases_per_editor=2):
         try:
             max_days = 180
             engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
@@ -844,7 +863,7 @@ class MainWindow(QtWidgets.QWidget):
                         WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team',
                       'Support Team_Morning', 'Support Team_Night','RG-Cases') 
                        AND "SupervisorName" <> 'Mohammed Fadil' """, engine)
-            editors["Required"] = 2
+            editors["Required"] = cases_per_editor
             editorNames = editors["CasePortalName"].unique().tolist()
             sql = """SELECT * FROM grsdbrd."GeoCompletion" """
             completed = pd.read_sql(sql, engine_sqlserver)
@@ -852,9 +871,8 @@ class MainWindow(QtWidgets.QWidget):
             completed = completed.sort_values(by="GEO S Completion", ascending=True)
             completed = completed.drop_duplicates(subset="Case Number", keep='last')
             current_cases = pd.read_sql("""SELECT * FROM grsdbrd."CurrentCases" """, engine_sqlserver)
-            evaluated_cases = pd.read_sql("""SELECT "UniqueKey" FROM evaluation."EvaluationTable" 
-                                        UNION 
-                                        SELECT "UniqueKey" FROM evaluation."CaseAssignment" """, engine)
+            evaluated_cases = pd.read_sql("""SELECT "UniqueKey" FROM evaluation."EvaluationTable" UNION 
+                                        SELECT "UniqueKey" FROM evaluation."CaseAssignment" """, conn)
             evaluated_cases = evaluated_cases.drop_duplicates(subset="UniqueKey")
             df_cases = completed[completed["Geo Supervisor"].isin(editors["CasePortalName"])]
             df_cases = df_cases[(~df_cases["Case Number"].isin(current_cases["Case Number"])) & (~df_cases["UniqueKey"].isin(evaluated_cases["UniqueKey"]))]
@@ -1004,10 +1022,9 @@ class MainWindow(QtWidgets.QWidget):
 
         conn = get_connection()
         engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
-        check_updates = """SELECT * FROM grsdbrd."CurrentCases" 
-            WHERE "UploadDate" = CAST(GETDATE() AS date)
-            LIMIT 1"""
-        current_df = pd.read_sql(check_updates, conn)
+        check_updates = """SELECT TOP 1 * FROM grsdbrd."CurrentCases" 
+            WHERE "UploadDate" = CAST(GETDATE() AS date)"""
+        current_df = pd.read_sql(check_updates, engine_sqlserver)
         if current_df.empty:
             if login_id in admin_users:
                 message = "Database is not up to date."
@@ -1024,21 +1041,21 @@ class MainWindow(QtWidgets.QWidget):
         count = pd.read_sql(check_sql, conn)['count'].iloc[0]
         # print(f"*/*/*/*/*/**/*//* {count}")
         if count==0:
-            # print(f'{count} cases')
-            self.check_unevaluateded_status()
+            print(f'{count} cases')
+            # self.check_unevaluateded_status()
             # print("------No cases assigned today")
-            if login_id in admin_users:
+            # if login_id in admin_users:
                 
-                assigned_df = self.generate_daily_assignment()
-                cases_count = len(assigned_df) if assigned_df is not None else 0
-                editors_count = len(assigned_df["EditorName"].nunique()) if assigned_df is not None else 0
-                earliest_date = assigned_df["CompletionDate"].min() if assigned_df is not None else None
-                editorName = assigned_df[assigned_df["CompletionDate"]==earliest_date]["EditorName"].values[0] if assigned_df is not None else None
-                if assigned_df is None:
-                    return
-                QtWidgets.QMessageBox.information(self, "Assignments Generated",
-                    f"""{cases_count} assignments were generated for {editors_count} Editor.
-                    Earliest Case Assigned on: {earliest_date} for {editorName} """)
+            #     assigned_df = self.generate_daily_assignment()
+            #     cases_count = len(assigned_df) if assigned_df is not None else 0
+            #     editors_count = len(assigned_df["EditorName"].nunique()) if assigned_df is not None else 0
+            #     earliest_date = assigned_df["CompletionDate"].min() if assigned_df is not None else None
+            #     editorName = assigned_df[assigned_df["CompletionDate"]==earliest_date]["EditorName"].values[0] if assigned_df is not None else None
+            #     if assigned_df is None:
+            #         return
+            #     QtWidgets.QMessageBox.information(self, "Assignments Generated",
+            #         f"""{cases_count} assignments were generated for {editors_count} Editor.
+            #         Earliest Case Assigned on: {earliest_date} for {editorName} """)
         
         # Load supervisor's cases
         self.cases_df = self.load_supervisor_assignment(supervisor)
@@ -2367,11 +2384,13 @@ class StatisticsTab(QtWidgets.QWidget):
 
         self.lbl_total = QtWidgets.QLabel()
         self.lbl_eval = QtWidgets.QLabel()
-        self.lbl_remaining = QtWidgets.QLabel()
         self.lbl_rejected = QtWidgets.QLabel()
+        self.lbl_edited = QtWidgets.QLabel()
+        self.lbl_remaining = QtWidgets.QLabel()
+        
 
-        kpi_cards = [self.lbl_total, self.lbl_eval, self.lbl_remaining, self.lbl_rejected]
-        colors = ['#0A3556', '#367580', '#BC9975', '#824131', '#A1A1A1', '#E6EDF4']
+        kpi_cards = [self.lbl_total, self.lbl_eval, self.lbl_rejected, self.lbl_edited, self.lbl_remaining]
+        colors = ['#0A3556', '#367580', '#824131',  '#BC9975', '#A1A1A1', '#E6EDF4']
         for i in range(len(kpi_cards)):
             lbl = kpi_cards[i]
             color = colors[i]
@@ -2543,12 +2562,21 @@ class StatisticsTab(QtWidgets.QWidget):
             conn, params=params
         ).iloc[0, 0]
 
+        edited = pd.read_sql(
+            f'''SELECT COUNT(*) FROM evaluation."CaseAssignment"
+                WHERE "GeoAction" <> 'رفض'
+                AND "IsRetired" = FALSE
+                {where_clause}''',
+            conn, params=params
+        ).iloc[0, 0]
+
         remaining = total - evaluated
 
         self.lbl_total.setText(f"Total Assigned\n{total}")
         self.lbl_eval.setText(f"Evaluated\n{evaluated}")
-        self.lbl_remaining.setText(f"Remaining\n{remaining}")
-        self.lbl_rejected.setText(f"Rejected\n{rejected}")
+        self.lbl_rejected.setText(f"Reject Cases\n{rejected}")
+        self.lbl_edited.setText(f"Edit Cases\n{edited}")
+        self.lbl_remaining.setText(f"In Progress\n{remaining}")
 
         # -------------------------
         # GEOACTION BREAKDOWN
