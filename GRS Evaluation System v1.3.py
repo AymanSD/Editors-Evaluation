@@ -34,8 +34,8 @@ import plotly.io as pio
 # Database connection settings
 # ----------------------------
 DB_SETTINGS = {
-    # "dbname": "GSA",
-    "dbname": "GRS",
+    "dbname": "GSA",
+    # "dbname": "GRS",
     "user": "evalApp",
     "password": "app1234",
     # "host": "10.150.40.74",
@@ -79,7 +79,7 @@ excluded_supervisors = ["Mohammed Mustafa Al-Daly", "Musab Hassan"]
 sup_ids = ['MMohammed.c', 'MBarakat.c', 'AElFadil.c', 'MFadil.c', 'falmarshed.c', 'ralotaibi.c', 'mmohammedKhir.c', 'malnmar.c', 'RAlharthi.c', 'SAlfuraihi.c', 'obakri.c', 'fhaddadi.c']
 # login_id = sup_ids[6].lower().strip()
 # login_id = admin_users[6].lower().strip()
-# login_id =  "AAltalhi.c".lower().strip()
+login_id =  "aaltoum.c".lower().strip()
 
 # ----------------------------
 # Helper function for DB connection
@@ -172,26 +172,226 @@ def get_replacement_supervisor(user):
 
     return row
 
-def add_replacement(absent, replacement, start, end):
+# def add_replacement(absent, replacement, start, end):
+#     conn = get_connection()
+#     absent_id = get_ids(absent)
+#     replaced_id = get_ids(replacement)
+#     cur = conn.cursor()
+
+#     query = """
+#         INSERT INTO evaluation."SupervisorReplacements"
+#         ("AbsentSupervisor", "AbsentSupervisorID", "ReplacementSupervisor", "ReplacementSupervisorID", "StartDate", "EndDate")
+#         VALUES (%s, %s, %s, %s, %s, %s)
+#         ON CONFLICT ("AbsentSupervisorID", "StartDate", "EndDate")
+#         DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
+#                       "ReplacementSupervisorID" = EXCLUDED."ReplacementSupervisorID", 
+#                       "EndDate" = EXCLUDED."EndDate";"""
+
+#     cur.execute(query, (absent, absent_id, replacement, replaced_id, start, end))
+#     conn.commit()
+#     conn.close()
+
+def add_replacement(absent_id, replacement_id, start_date, end_date):
     conn = get_connection()
-    absent_id = get_ids(absent)
-    replaced_id = get_ids(replacement)
-    cur = conn.cursor()
+    cursor = conn.cursor()
 
-    query = """
-        INSERT INTO evaluation."SupervisorReplacements"
-        ("AbsentSupervisor", "AbsentSupervisorID", "ReplacementSupervisor", "ReplacementSupervisorID", "StartDate", "EndDate")
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT ("AbsentSupervisorID", "StartDate", "EndDate")
-        DO UPDATE SET "ReplacementSupervisor" = EXCLUDED."ReplacementSupervisor",
-                      "ReplacementSupervisorID" = EXCLUDED."ReplacementSupervisorID", 
-                      "EndDate" = EXCLUDED."EndDate";"""
+    try:
+        # -----------------------------------------
+        # Basic validation
+        # -----------------------------------------
+        if start_date > end_date:
+            QMessageBox.critical(self, "Error",
+                                 "Start date cannot be after end date.")
+            return
 
-    cur.execute(query, (absent, absent_id, replacement, replaced_id, start, end))
-    conn.commit()
-    conn.close()
+        if absent_id == replacement_id:
+            QMessageBox.critical(self, "Error",
+                                 "Supervisor cannot replace himself.")
+            return
 
+        conn.autocommit = False
 
+        # ======================================================
+        # 1️⃣ CONFLICT B — HARD BLOCK
+        # ======================================================
+        cursor.execute("""
+            SELECT 1
+            FROM evaluation."SupervisorReplacement"
+            WHERE "ReplacementSupervisorID" = %s
+              AND "AbsentSupervisorID" <> %s
+              AND daterange("StartDate", "EndDate", '[]')
+                  && daterange(%s, %s, '[]')
+            LIMIT 1;
+        """, (replacement_id, absent_id, start_date, end_date))
+
+        if cursor.fetchone():
+            conn.rollback()
+            QMessageBox.critical(
+                self,
+                "Error",
+                "This supervisor is already assigned as a replacement "
+                "for another supervisor during the selected period."
+            )
+            return
+
+        # ======================================================
+        # 2️⃣ CHECK Conflict A (before modifying)
+        # ======================================================
+        cursor.execute("""
+            SELECT "ReplacementSupervisorID",
+                   "StartDate",
+                   "EndDate"
+            FROM evaluation."SupervisorReplacement"
+            WHERE "AbsentSupervisorID" = %s
+              AND daterange("StartDate", "EndDate", '[]')
+                  && daterange(%s, %s, '[]')
+            ORDER BY "StartDate";
+        """, (absent_id, start_date, end_date))
+
+        conflict_rows = cursor.fetchall()
+
+        # ======================================================
+        # CONFIRMATION MESSAGE
+        # ======================================================
+
+        if conflict_rows:
+            message_text = (
+                "This action will modify existing replacement periods "
+                "for this absent supervisor.\n\n"
+                "Do you want to continue?"
+            )
+        else:
+            message_text = (
+                "Add new replacement period?\n\n"
+                "Do you want to continue?"
+            )
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm Action",
+            message_text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.No:
+            conn.rollback()
+            return
+
+        # ======================================================
+        # 3️⃣ APPLY Conflict A logic
+        # ======================================================
+        for existing_replacement, existing_start, existing_end in conflict_rows:
+
+            # Same replacement → MERGE
+            if existing_replacement == replacement_id:
+                new_start = min(existing_start, start_date)
+                new_end = max(existing_end, end_date)
+
+                cursor.execute("""
+                    UPDATE evaluation."SupervisorReplacement"
+                    SET "StartDate" = %s,
+                        "EndDate" = %s
+                    WHERE "AbsentSupervisorID" = %s
+                      AND "ReplacementSupervisorID" = %s
+                      AND "StartDate" = %s
+                      AND "EndDate" = %s;
+                """, (
+                    new_start,
+                    new_end,
+                    absent_id,
+                    existing_replacement,
+                    existing_start,
+                    existing_end
+                ))
+
+                conn.commit()
+
+                QMessageBox.information(
+                    self,
+                    "Success",
+                    "Replacement period merged successfully."
+                )
+                return
+
+            # Different replacement → SPLIT
+            else:
+
+                # Left portion
+                if existing_start < start_date:
+                    cursor.execute("""
+                        UPDATE evaluation."SupervisorReplacement"
+                        SET "EndDate" = %s
+                        WHERE "AbsentSupervisorID" = %s
+                          AND "ReplacementSupervisorID" = %s
+                          AND "StartDate" = %s
+                          AND "EndDate" = %s;
+                    """, (
+                        start_date - timedelta(days=1),
+                        absent_id,
+                        existing_replacement,
+                        existing_start,
+                        existing_end
+                    ))
+
+                # Right portion
+                if existing_end > end_date:
+                    cursor.execute("""
+                        INSERT INTO evaluation."SupervisorReplacement"
+                        ("AbsentSupervisorID",
+                         "ReplacementSupervisorID",
+                         "StartDate",
+                         "EndDate")
+                        VALUES (%s, %s, %s, %s);
+                    """, (
+                        absent_id,
+                        existing_replacement,
+                        end_date + timedelta(days=1),
+                        existing_end
+                    ))
+
+                # Fully covered → delete
+                if existing_start >= start_date and existing_end <= end_date:
+                    cursor.execute("""
+                        DELETE FROM evaluation."SupervisorReplacement"
+                        WHERE "AbsentSupervisorID" = %s
+                          AND "ReplacementSupervisorID" = %s
+                          AND "StartDate" = %s
+                          AND "EndDate" = %s;
+                    """, (
+                        absent_id,
+                        existing_replacement,
+                        existing_start,
+                        existing_end
+                    ))
+
+        # ======================================================
+        # 4️⃣ INSERT NEW RECORD
+        # ======================================================
+        cursor.execute("""
+            INSERT INTO evaluation."SupervisorReplacement"
+            ("AbsentSupervisorID",
+             "ReplacementSupervisorID",
+             "StartDate",
+             "EndDate")
+            VALUES (%s, %s, %s, %s);
+        """, (absent_id, replacement_id, start_date, end_date))
+
+        conn.commit()
+
+        QMessageBox.information(
+            self,
+            "Success",
+            "Replacement added successfully."
+        )
+
+    except Exception as e:
+        conn.rollback()
+        QMessageBox.critical(self, "Database Error", str(e))
+
+    finally:
+        conn.autocommit = True
+        cursor.close()
 
 
 def load_groups():
@@ -579,7 +779,6 @@ class MainWindow(QtWidgets.QWidget):
             }
             QPushButton:hover { background-color: #a1503e; }
         """)
-        self.assign_btn.clicked.connect(lambda: AssignCasesDialog().exec_())
 
         self.update_btn = QtWidgets.QPushButton("Update Ops Data")
         self.update_btn.setStyleSheet("""
@@ -594,7 +793,7 @@ class MainWindow(QtWidgets.QWidget):
             }
             QPushButton:hover { background-color: #a1503e; }
         """)
-        self.update_btn.clicked.connect(lambda: UpdateOpsData(conn).exec_())
+        # self.update_btn.clicked.connect(lambda: UpdateOpsData(conn).exec_())
 
         self.replacement_btn = QtWidgets.QPushButton("Manage Replacements")
         self.replacement_btn.setStyleSheet("""
@@ -609,10 +808,10 @@ class MainWindow(QtWidgets.QWidget):
             }
             QPushButton:hover { background-color: #a1503e; }
         """)
-        self.replacement_btn.clicked.connect(lambda: ReplacementManager().exec_())
+        
         if login_id in admin_users:
             sidebar_layout.addWidget(self.assign_btn)
-            sidebar_layout.addWidget(self.update_btn)
+            # sidebar_layout.addWidget(self.update_btn)
             sidebar_layout.addWidget(self.replacement_btn)
 
         # self.supervisor_drop.currentIndexChanged.connect(self.emit_filters)
@@ -699,6 +898,9 @@ class MainWindow(QtWidgets.QWidget):
         self.load_btn.clicked.connect(self.load_cases)
         self.reset_btn.clicked.connect(self.reset_filters)
         # self.generate_btn.clicked.connect(self.generate_daily_assignment)
+        self.assign_btn.clicked.connect(lambda: AssignCasesDialog().exec_())
+        self.replacement_btn.clicked.connect(lambda: ReplacementManager().exec_())
+        self.generate_btn.clicked.connect(self.generate_daily_assignment)
         self.table.cellDoubleClicked.connect(self.open_evaluation)
 
         self.cases_df = pd.DataFrame()
@@ -751,7 +953,7 @@ class MainWindow(QtWidgets.QWidget):
 
                 # supervisorName = replacement_name
             remaining_query += """ AND "AssignedSupervisor" = %s """
-            evaluated_query += """ AND "EvaluatedBy" = %s """
+            evaluated_query += """ AND "EvaluatedBy" = %s """ 
             # print("=>>> Current Supervisor:", str(supervisorName))
         remainging = str(pd.read_sql(remaining_query, conn, params=[current_supervisor]).iloc[0,0])
         evaluated = str(pd.read_sql(evaluated_query, conn, params=[supervisorName]).iloc[0,0])
@@ -762,7 +964,8 @@ class MainWindow(QtWidgets.QWidget):
         print("Checking Unevaluated Cases...")
         conn = get_connection()
         # Create SQLAlchemy engine for SQL Server via pyodbc
-        engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+        # engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+        engine_sqlserver = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
         # 1. Fetch all un-evaluated assignments
         
         current_df = pd.read_sql("""SELECT "Case Number" FROM grsdbrd."CurrentCases" """, engine_sqlserver)['Case Number'].dropna().unique().tolist()
@@ -855,9 +1058,10 @@ class MainWindow(QtWidgets.QWidget):
     def generate_daily_assignment(self, cases_per_editor=2):
         try:
             max_days = 180
-            engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
-            engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
-            # engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
+            # engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+            engine_sqlserver = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
+            # engine = create_engine("postgresql://evalApp:app1234@10.150.40.74:5432/GRS")
+            engine = create_engine("postgresql://evalApp:app1234@127.0.0.1:5432/GSA")
             conn = get_connection()
             editors = pd.read_sql("""SELECT * FROM evaluation."EditorsList" 
                         WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team',
@@ -924,7 +1128,7 @@ class MainWindow(QtWidgets.QWidget):
             supervisors = pd.read_sql("""SELECT DISTINCT("SupervisorName") FROM evaluation."EditorsList" 
                          WHERE "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team',
                         'Support Team_Morning', 'Support Team_Night','RG-Cases')
-                         AND "SupervisorName" IS NOT NULL """, engine_postgres2)["SupervisorName"].tolist()
+                         AND "SupervisorName" IS NOT NULL """, engine)["SupervisorName"].tolist()
 
             for sup in supervisors:
                 if sup in ['Mohammed AlDaly','Ahmad ElFadil','Mohammed Fadil','Musab Hassan','Mohammed Ibrahim Mohammed']:
@@ -1021,9 +1225,12 @@ class MainWindow(QtWidgets.QWidget):
         #     return
 
         conn = get_connection()
-        engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
-        check_updates = """SELECT TOP 1 * FROM grsdbrd."CurrentCases" 
-            WHERE "UploadDate" = CAST(GETDATE() AS date)"""
+        # engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+        engine_sqlserver = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
+        # check_updates = """SELECT TOP 1 * FROM grsdbrd."CurrentCases" 
+        #     WHERE "UploadDate" = CAST(GETDATE() AS date)"""
+        check_updates = """SELECT * FROM grsdbrd."CurrentCases" 
+            WHERE "UploadDate" = CURRENT_DATE LIMIT 1"""
         current_df = pd.read_sql(check_updates, engine_sqlserver)
         if current_df.empty:
             if login_id in admin_users:
@@ -1042,7 +1249,7 @@ class MainWindow(QtWidgets.QWidget):
         # print(f"*/*/*/*/*/**/*//* {count}")
         if count==0:
             print(f'{count} cases')
-            # self.check_unevaluateded_status()
+            self.check_unevaluateded_status()
             # print("------No cases assigned today")
             # if login_id in admin_users:
                 
@@ -1794,7 +2001,7 @@ class ReplacementManager(QtWidgets.QDialog):
 
         add_replacement(absent, replacement, start, end)
 
-        QtWidgets.QMessageBox.information(self, "Success", "Replacement saved!")
+        # QtWidgets.QMessageBox.information(self, "Success", "Replacement saved!")
 
 # class UpdateOpsData(QtWidgets.QDialog):
 #     def __init__(self, engine, parent=None):
@@ -2175,7 +2382,8 @@ class AssignCasesDialog(QtWidgets.QDialog):
         self.resize(900, 500)
 
         self.conn = get_connection()
-        self.engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+        # self.engine_sqlserver = create_engine(f"mssql+pyodbc:///?odbc_connect={odbc_connect_str}", fast_executemany=True)
+        engine_sqlserver = create_engine("postgresql://postgres:1234@localhost:5432/GSA")
 
         # --- Widgets ---
         self.editor_combo = QtWidgets.QComboBox()
