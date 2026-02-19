@@ -1,18 +1,20 @@
 SELECT 
-    -- "EditorName",
+    "EditorName",
     COUNT(*) AS "AssignedCount",
+	COUNT(*) FILTER (WHERE "GeoAction" = 'رفض') AS "RejectCount",
+	COUNT(*) FILTER (WHERE "GeoAction" <> 'رفض') AS "EditCount",
     COUNT(*) FILTER (WHERE "IsEvaluated" = TRUE) AS "EvaluatedCount",
 	COUNT(*) FILTER (WHERE "IsEvaluated" = FALSE) AS "InProgressCount"
 FROM evaluation."CaseAssignment"
-WHERE "AssignmentDate" BETWEEN '2026-01-01' AND '2026-01-24'
-AND "IsRetired" = True
--- GROUP BY "EditorName"
--- ORDER BY "EditorName";
+WHERE "AssignmentDate" >='2026-01-01' --AND '2026-01-24'
+AND "IsRetired" = FALSE
+GROUP BY "EditorName"
+ORDER BY "EditorName";
 
 
 SELECT
     "EvaluatedBy",
-    COUNT(*) AS "AssignedCount"
+    COUNT(*) AS "ActualEvaluatedCount"
  --    COUNT(*) FILTER (WHERE "IsEvaluated" = TRUE) AS "EvaluatedCount",
 	-- COUNT(*) FILTER (WHERE "IsEvaluated" = FALSE) AS "InProgressCount"
 FROM evaluation."EvaluationTable"
