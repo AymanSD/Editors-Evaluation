@@ -2429,8 +2429,8 @@ class AssignCasesDialog(QtWidgets.QDialog):
             SELECT DISTINCT "CasePortalName"
             FROM evaluation."EditorsList"
             WHERE "CasePortalName" IS NOT NULL
-            AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 
-                    'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team')
+            AND "GroupID" IN ('Editor Morning Shift', 'Editor Night Shift', 'Support Team_Night', 'Support Team_Morning',
+                    'Pod-Al-Shuhada-1', 'Pod-Al-Shuhada-2', 'Urgent Team', 'RG-Cases')
         """, self.conn)
 
         self.editor_combo.addItems(sorted(df["CasePortalName"].tolist()))
@@ -2460,19 +2460,21 @@ class AssignCasesDialog(QtWidgets.QDialog):
     def load_comp_cases(self):
         editor = self.editor_combo.currentText()
 
-        sql = """
+        sql = f"""
             SELECT "UniqueKey","Case Number", "REN", "GEO S Completion","Geo Supervisor",
                 "Geo Supervisor Recommendation", "SupervisorName","GroupID","GeoAction", "Region"
             FROM grsdbrd."GeoCompletion"
-            WHERE "Geo Supervisor" = %s
+            WHERE "Geo Supervisor" = '{editor}'
         """
         evaluated_df = pd.read_sql("""
                     SELECT "UniqueKey" FROM evaluation."EvaluationTable"
                     UNION
                     SELECT "UniqueKey" FROM evaluation."CaseAssignment" """, self.conn)
-
-        self.df = pd.read_sql(sql, self.engine_sqlserver, params=[editor])
-        self.df = self.df[~self.df["UniqueKey"].isin(evaluated_df["UniqueKey"])]
+        current_df = pd.read_sql("""SELECT "Case Number" FROM grsdbrd."CurrentCases" """, self.engine_sqlserver)
+        # params = {"editor": editor}
+        print(editor)
+        self.df = pd.read_sql(sql, self.engine_sqlserver)#, params=params)
+        self.df = self.df[(~self.df["UniqueKey"].isin(evaluated_df["UniqueKey"])) & (~self.df["Case Number"].isin(current_df["Case Number"]))]
 
         if self.df.empty:
             QtWidgets.QMessageBox.information(self, "No Cases", "No available cases for this editor.")

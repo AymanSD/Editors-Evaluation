@@ -1,0 +1,33 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "askForPassword": true,
+            "driver": "PostgreSQL",
+            "name": "GSA",
+            "database": "GSA",
+            "username": "app_user"
+        },
+        {
+            "connectionTimeout": 15,
+            "mssqlOptions": {
+                "appName": "SQLTools",
+                "useUTC": true,
+                "encrypt": true,
+                "trustServerCertificate": false
+            },
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "0003-MAAL-01\\LASSQLSERVER",
+            "port": 1433,
+            "askForPassword": true,
+            "driver": "MSSQL",
+            "name": "GRSDBRD",
+            "database": "GRSDASHBOARD",
+            "username": "lasapp"
+        }
+    ]
+}
